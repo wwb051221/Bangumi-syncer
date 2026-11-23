@@ -23,6 +23,13 @@
 - 项目更名为 **Bangumi-syncer**：仓库/发行名 `bangumi-syncer`、Python 包 `bangumi_syncer`、
   命令行 `bangumi-syncer`、镜像 `ghcr.io/wwb051221/bangumi-syncer`、容器名 `bangumi-syncer`。
   配置环境变量由 `FNOS2BGM_CONFIG` 改为 `BANGUMI_SYNCER_CONFIG`；旧状态库结构与行为不变。
+- 构建支持 `BASE_IMAGE` build arg / `.env`，便于国内镜像源；详见 README。
+
+### 验证
+
+- 在 fnOS 1.2.1102 实机用 `docker compose build/run` 验证：live 模式快照真实库（13 季 / 296 集）、
+  状态页健康检查、容器内直连 Bangumi 匹配（药屋→420628、魔卡→1940）。
+  过程与结论见 [docs/verification.md](docs/verification.md)。
 
 ## [0.1.0] - 2026-11-23
 

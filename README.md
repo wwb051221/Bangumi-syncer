@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
 中文文档：[README.zh-CN.md](README.zh-CN.md) · Design notes: [architecture](docs/architecture.md) ·
-[matching](docs/mapping.md) · [fnOS schema](docs/schema.md)
+[matching](docs/mapping.md) · [fnOS schema](docs/schema.md) · [verification log](docs/verification.md)
 
 ## How it works
 
