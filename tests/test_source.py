@@ -4,9 +4,9 @@ import sqlite3
 
 import pytest
 
-from fnos2bgm.config import FnosOptions, SourceConfig
-from fnos2bgm.sources.base import SourceError
-from fnos2bgm.sources.fnos import FnosSource, path_allowed
+from bangumi_syncer.config import FnosOptions, SourceConfig
+from bangumi_syncer.sources.base import SourceError
+from bangumi_syncer.sources.fnos import FnosSource, path_allowed
 
 
 def build_source(db_path: str, **overrides) -> FnosSource:

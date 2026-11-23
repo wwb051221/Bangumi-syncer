@@ -4,9 +4,9 @@ import urllib.parse
 
 import pytest
 
-from fnos2bgm.config import AccountConfig, TargetConfig
-from fnos2bgm.http import HttpClient
-from fnos2bgm.oauth import OAuthError, authorize_url, exchange_code
+from bangumi_syncer.config import AccountConfig, TargetConfig
+from bangumi_syncer.http import HttpClient
+from bangumi_syncer.oauth import OAuthError, authorize_url, exchange_code
 
 
 def test_authorize_url_contains_everything():

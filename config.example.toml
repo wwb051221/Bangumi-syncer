@@ -1,5 +1,5 @@
 # ============================================================================
-# fnos2bgm 配置示例    cp config.example.toml config.toml  然后按需修改
+# Bangumi-syncer 配置示例    cp config.example.toml config.toml  然后按需修改
 # ----------------------------------------------------------------------------
 # 字符串支持 ${ENV_VAR} 和 ${ENV_VAR:-默认值} 展开，
 # 因此 client_secret 这类敏感值可以放在容器的环境变量里。
@@ -69,14 +69,14 @@ verify_remote = true
 [target]
 type = "bangumi"
 # Bangumi 要求带可识别的 User-Agent，建议改成你自己的仓库地址
-user_agent = "fnos2bgm/0.1.0 (+https://github.com/fnos2bgm/fnos2bgm)"
+user_agent = "bangumi-syncer/0.1.0 (+https://github.com/wwb051221/Bangumi-syncer)"
 timeout_seconds = 20
 max_retries = 3
 # 每个账号两次请求之间的最小间隔（秒）。1 秒对社区服务比较礼貌。
 min_interval_seconds = 1.0
 
 # 一个 [[target.accounts]] 对应一个 Bangumi 账号。
-# 访问令牌在 `fnos2bgm oauth` 后保存在 state_db 里，不写回本文件。
+# 访问令牌在 `bangumi-syncer oauth` 后保存在 state_db 里，不写回本文件。
 [[target.accounts]]
 name = "main"
 client_id = "${BGM_CLIENT_ID}"

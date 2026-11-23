@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from fnos2bgm import config
-from fnos2bgm.config import ConfigError
+from bangumi_syncer import config
+from bangumi_syncer.config import ConfigError
 
 BASE = """
 [app]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fnos2bgm.models import Episode, PlayState, SeriesRef, is_watched
+from bangumi_syncer.models import Episode, PlayState, SeriesRef, is_watched
 
 SERIES = SeriesRef(key="k", title="t", year=2023, season=1, episode_count=24)
 

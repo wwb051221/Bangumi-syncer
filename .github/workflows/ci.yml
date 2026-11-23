@@ -50,10 +50,10 @@ jobs:
           context: .
           push: false
           load: true
-          tags: fnos2bgm:ci
+          tags: bangumi-syncer:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke test the image
         run: |
-          docker run --rm fnos2bgm:ci --version
-          docker run --rm fnos2bgm:ci search -k "薬屋のひとりごと" --limit 3 || true
+          docker run --rm bangumi-syncer:ci --version
+          docker run --rm bangumi-syncer:ci search -k "薬屋のひとりごと" --limit 3 || true

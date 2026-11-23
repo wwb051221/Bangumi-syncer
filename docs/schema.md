@@ -98,7 +98,7 @@ item.type = 'Directory' / 'MediaDB' / 'Video'  内部结构
 2. `plays_query`：每个用户每集最新的一条播放记录（含 `ts` / `watched` / `update_time`）
 3. `users_query`：所有正常账号（用于区分「没看过动漫」与「用户不存在」）
 
-完整 SQL 见 [`src/fnos2bgm/sources/fnos.py`](../src/fnos2bgm/sources/fnos.py) 里的
+完整 SQL 见 [`src/bangumi_syncer/sources/fnos.py`](../src/bangumi_syncer/sources/fnos.py) 里的
 `DEFAULT_EPISODES_QUERY` / `DEFAULT_PLAYS_QUERY` / `DEFAULT_USERS_QUERY`。
 
 ## 覆盖查询（升级适配）

@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from fnos2bgm.config import (
+from bangumi_syncer.config import (
     AccountConfig,
     AppConfig,
     Config,
@@ -18,8 +18,8 @@ from fnos2bgm.config import (
     TargetConfig,
     UserConfig,
 )
-from fnos2bgm.trackers import AuthError, SubjectHit, TrackEpisode, Tracker
-from fnos2bgm.trackers.base import EP_COLLECTED
+from bangumi_syncer.trackers import AuthError, SubjectHit, TrackEpisode, Tracker
+from bangumi_syncer.trackers.base import EP_COLLECTED
 
 ANIME_DIR = "/vol1/1000/\u5f71\u7247/\u52a8\u6f2b"  # 影片/动漫
 DRAMA_DIR = "/vol1/1000/\u5f71\u7247/\u7535\u89c6\u5267"  # 影片/电视剧
@@ -219,7 +219,7 @@ def make_config(fnos_db: str, state_db: str, *, dry_run: bool = False,
         ),
         target=TargetConfig(
             type="bangumi",
-            user_agent="fnos2bgm-test/0",
+            user_agent="bangumi-syncer-test/0",
             min_interval_seconds=0,
             accounts=[AccountConfig(name="main", client_id="id", client_secret="secret")],
         ),

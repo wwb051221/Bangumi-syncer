@@ -3,13 +3,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fnos2bgm"
+name = "bangumi-syncer"
 version = "0.1.0"
 description = "Sync fnOS (飞牛影视) anime watch progress to Bangumi"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "fnos2bgm contributors" }]
+authors = [{ name = "Bangumi-syncer contributors" }]
 keywords = ["fnos", "飞牛影视", "bangumi", "anime", "watch-progress", "docker", "self-hosted"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -29,12 +29,12 @@ dependencies = []
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.urls]
-Homepage = "https://github.com/fnos2bgm/fnos2bgm"
-Documentation = "https://github.com/fnos2bgm/fnos2bgm#readme"
-Issues = "https://github.com/fnos2bgm/fnos2bgm/issues"
+Homepage = "https://github.com/wwb051221/Bangumi-syncer"
+Documentation = "https://github.com/wwb051221/Bangumi-syncer#readme"
+Issues = "https://github.com/wwb051221/Bangumi-syncer/issues"
 
 [project.scripts]
-fnos2bgm = "fnos2bgm.cli:main"
+bangumi-syncer = "bangumi_syncer.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

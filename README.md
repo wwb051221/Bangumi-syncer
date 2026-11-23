@@ -1,10 +1,10 @@
-# fnos2bgm
+# Bangumi-syncer
 
 > Sync **fnOS (飞牛影视, `trim.media`)** anime watch progress to **Bangumi**.
 > Multi-user, read-only data source, dry-run by default, human-reviewable matching —
 > in a single zero-dependency container.
 
-[![CI](https://github.com/fnos2bgm/fnos2bgm/actions/workflows/ci.yml/badge.svg)](https://github.com/fnos2bgm/fnos2bgm/actions/workflows/ci.yml)
+[![CI](https://github.com/wwb051221/Bangumi-syncer/actions/workflows/ci.yml/badge.svg)](https://github.com/wwb051221/Bangumi-syncer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
@@ -15,7 +15,7 @@
 
 ```
 ┌─────────────────────┐        ┌──────────────────┐        ┌─────────────────┐
-│ fnOS trim.media     │  ro    │     fnos2bgm     │ HTTPS  │   api.bgm.tv    │
+│ fnOS trim.media     │  ro    │  Bangumi-syncer  │ HTTPS  │   api.bgm.tv    │
 │ trimmedia.db ───────┼───────▶│ snapshot → match │───────▶│ episode marks / │
 │ (root 700, closed)  │ VACUUM │ → idempotent push│ OAuth  │ collection state│
 └─────────────────────┘  INTO  └──────────────────┘        └─────────────────┘
@@ -33,8 +33,8 @@ position/runtime ratio is the primary "finished" signal (`sync.watch_ratio`, def
   read-only connection; playback is not interrupted.
 - **Dry-run by default** — `app.dry_run = true` only logs what it *would* push.
 - **Idempotent** — an episode is never pushed twice; optionally verifies Bangumi's own marks first.
-- **Reviewable** — low-confidence matches are queued instead of guessed (`fnos2bgm review`,
-  `fnos2bgm map add`).
+- **Reviewable** — low-confidence matches are queued instead of guessed (`bangumi-syncer review`,
+  `bangumi-syncer map add`).
 - **Merged seasons** — map local episodes 25–48 to a second Bangumi subject with `--from/--to`.
 - **Schema-drift tolerant** — required columns are probed, and the SQL can be overridden in config.
 - **Zero runtime dependencies** — stdlib only, ~55 MB image.
@@ -42,8 +42,8 @@ position/runtime ratio is the primary "finished" signal (`sync.watch_ratio`, def
 ## Quick start
 
 ```bash
-git clone https://github.com/fnos2bgm/fnos2bgm.git
-cd fnos2bgm
+git clone https://github.com/wwb051221/Bangumi-syncer.git
+cd Bangumi-syncer
 cp config.example.toml config.toml
 ```
 
@@ -53,13 +53,13 @@ cp config.example.toml config.toml
 3. Authorise (token is stored in `/data/state/state.db`, refreshed automatically):
 
    ```bash
-   docker compose run --rm fnos2bgm oauth --account main --manual
+   docker compose run --rm bangumi-syncer oauth --account main --manual
    ```
 
 4. Rehearse one run with `dry_run = true`:
 
    ```bash
-   docker compose run --rm fnos2bgm run --once
+   docker compose run --rm bangumi-syncer run --once
    ```
 
 5. Set `app.dry_run = false`, then `docker compose up -d`. Status page: `http://<nas>:8099/`.
@@ -68,7 +68,7 @@ cp config.example.toml config.toml
 
 ```bash
 pip install .
-fnos2bgm --config config.toml run --once
+bangumi-syncer --config config.toml run --once
 ```
 
 The process needs read access to `trimmedia.db` (root, or `source.mode = "snapshot"` with a
@@ -93,18 +93,18 @@ watch_ratio = 0.95
 ```
 
 ```bash
-fnos2bgm oauth --account me
-fnos2bgm oauth --account kids
+bangumi-syncer oauth --account me
+bangumi-syncer oauth --account kids
 ```
 
 ## Manual review and mappings
 
 ```bash
-fnos2bgm review                          # shows without a confident match + top candidates
-fnos2bgm search -k "茶啊二中"             # find a subject id
-fnos2bgm map list
-fnos2bgm map add --account main --series 'fnos:<guid>:s1' --subject 148295
-fnos2bgm map add --account main --series 'fnos:<guid>:s1' --subject 486347 --from 25 --to 48
+bangumi-syncer review                          # shows without a confident match + top candidates
+bangumi-syncer search -k "茶啊二中"             # find a subject id
+bangumi-syncer map list
+bangumi-syncer map add --account main --series 'fnos:<guid>:s1' --subject 148295
+bangumi-syncer map add --account main --series 'fnos:<guid>:s1' --subject 486347 --from 25 --to 48
 ```
 
 Mappings are scoped to `(account, series, episode range)`; a change clears the push history of
@@ -117,13 +117,13 @@ else waits for a human — a wrong mapping writes wrong history, a missing one j
 ## Commands
 
 ```
-fnos2bgm run [--once]        # loop (container default) or one shot
-fnos2bgm status              # recent runs, tokens, counters
-fnos2bgm review [--json]     # unmatched shows with candidates
-fnos2bgm map list|add|remove # season -> subject mappings
-fnos2bgm search -k KEYWORD   # look up Bangumi subject ids
-fnos2bgm oauth --account X   # authorise (--manual works over SSH)
-fnos2bgm dump [--json]       # what the media server reports, no writes
+bangumi-syncer run [--once]        # loop (container default) or one shot
+bangumi-syncer status              # recent runs, tokens, counters
+bangumi-syncer review [--json]     # unmatched shows with candidates
+bangumi-syncer map list|add|remove # season -> subject mappings
+bangumi-syncer search -k KEYWORD   # look up Bangumi subject ids
+bangumi-syncer oauth --account X   # authorise (--manual works over SSH)
+bangumi-syncer dump [--json]       # what the media server reports, no writes
 ```
 
 Exit codes: `0` ok, `1` run failed, `2` config error, `3` re-authorisation needed.

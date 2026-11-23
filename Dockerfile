@@ -2,9 +2,9 @@
 
 FROM python:3.12-slim
 
-LABEL org.opencontainers.image.title="fnos2bgm"
+LABEL org.opencontainers.image.title="Bangumi-syncer"
 LABEL org.opencontainers.image.description="Sync fnOS (飞牛影视) anime watch progress to Bangumi"
-LABEL org.opencontainers.image.source="https://github.com/fnos2bgm/fnos2bgm"
+LABEL org.opencontainers.image.source="https://github.com/wwb051221/Bangumi-syncer"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.version="0.1.0"
 
@@ -29,5 +29,5 @@ HEALTHCHECK --interval=60s --timeout=5s --start-period=20s --retries=3 \
 
 # Runs as root on purpose: the fnOS trim.media database is root:root 0700.
 # Mount it read-only, and see README "安全" for running unprivileged instead.
-ENTRYPOINT ["python", "-m", "fnos2bgm"]
+ENTRYPOINT ["python", "-m", "bangumi_syncer"]
 CMD ["run"]

@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 import json
 import threading
+import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -68,7 +69,7 @@ def build_status(cfg: Config, store: StateStore, state: StatusState | None = Non
         "version": __version__,
         "dry_run": cfg.app.dry_run,
         "timezone": tz,
-        "uptime_seconds": int(__import__("time").time() - state.started_at) if state else 0,
+        "uptime_seconds": int(time.time() - state.started_at) if state else 0,
         "next_run_at": state.next_run_at if state else None,
         "next_run_at_human": format_time(state.next_run_at if state else None, tz),
         "source": (state.source_description if state else {}) or {"type": cfg.source.type, "mode": cfg.source.mode},
@@ -120,10 +121,10 @@ def _render(cfg: Config, store: StateStore, state: StatusState | None) -> str:
     parts.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">")
     parts.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
     parts.append("<meta http-equiv=\"refresh\" content=\"15\">")
-    parts.append("<title>fnos2bgm</title><style>" + STYLE + "</style></head><body>")
+    parts.append("<title>Bangumi-syncer</title><style>" + STYLE + "</style></head><body>")
 
     badge = '<span class="badge dry">DRY-RUN</span>' if data["dry_run"] else '<span class="badge ok">LIVE</span>'
-    parts.append("<h1>fnos2bgm <span class=\"muted\">v%s</span> %s</h1>" % (e(data["version"]), badge))
+    parts.append("<h1>Bangumi-syncer <span class=\"muted\">v%s</span> %s</h1>" % (e(data["version"]), badge))
     parts.append(
         '<div class="muted">飞牛影视 → Bangumi 追番进度同步 · uptime %s · next run %s · '
         '<a href="/api/status">JSON</a> · <a href="/healthz">health</a></div>'
@@ -166,7 +167,7 @@ def _render(cfg: Config, store: StateStore, state: StatusState | None) -> str:
             % (e(account["name"]), token, e(format_time(account.get("expires_at"), tz)), e(account.get("remote_user") or "-"))
         )
     if not data["accounts"]:
-        parts.append('<tr><td colspan="4" class="empty">run <code>fnos2bgm oauth --account NAME</code> first</td></tr>')
+        parts.append('<tr><td colspan="4" class="empty">run <code>bangumi-syncer oauth --account NAME</code> first</td></tr>')
     parts.append("</table>")
 
     # runs
@@ -227,7 +228,7 @@ def _render(cfg: Config, store: StateStore, state: StatusState | None) -> str:
         else:
             first = 0
         parts.append(
-            "<pre>fnos2bgm map add --account %s --series '%s' --subject %s%s</pre>"
+            "<pre>bangumi-syncer map add --account %s --series '%s' --subject %s%s</pre>"
             % (e(item["account"]), e(item["series_key"]), first or "<id>",
                "" if not item.get("episode_count") else "")
         )
@@ -258,13 +259,13 @@ def _render(cfg: Config, store: StateStore, state: StatusState | None) -> str:
     parts.append("</table>")
 
     parts.append('<p class="muted" style="margin-top:2rem">generated %s · dry-run=%s</p>'
-                 % (e(format_time(__import__("time").time(), tz)), data["dry_run"]))
+                 % (e(format_time(time.time(), tz)), data["dry_run"]))
     parts.append("</body></html>")
     return "".join(parts)
 
 
 class _Handler(BaseHTTPRequestHandler):
-    server_version = "fnos2bgm/" + __version__
+    server_version = "bangumi-syncer/" + __version__
 
     cfg: Config
     store: StateStore

@@ -70,15 +70,15 @@ else:                                        → 自动映射（strategy=auto, c
 
 ```
 subject 420628 has 24 episode(s); local episode 29 maps to #29 - a split mapping may be needed
-(fnos2bgm map add --series fnos:xxxx:s1 --subject <id> --from N --to M)
+(bangumi-syncer map add --series fnos:xxxx:s1 --subject <id> --from N --to M)
 ```
 
 拆分示例：
 
 ```bash
-fnos2bgm map add --account main --series 'fnos:xxxx:s1' --subject 420628 --from 1  --to 24
-fnos2bgm map add --account main --series 'fnos:xxxx:s1' --subject 486347 --from 25 --to 48
-fnos2bgm map add --account main --series 'fnos:xxxx:s1' --subject 568244 --from 49 --to 60
+bangumi-syncer map add --account main --series 'fnos:xxxx:s1' --subject 420628 --from 1  --to 24
+bangumi-syncer map add --account main --series 'fnos:xxxx:s1' --subject 486347 --from 25 --to 48
+bangumi-syncer map add --account main --series 'fnos:xxxx:s1' --subject 568244 --from 49 --to 60
 ```
 
 换算规则：`条目集号 = 本地集号 − ep_from + 1`，按条目章节的 `sort` 顺序定位（不依赖绝对集号），
@@ -87,9 +87,9 @@ fnos2bgm map add --account main --series 'fnos:xxxx:s1' --subject 568244 --from 
 ## 复核工作流
 
 ```bash
-fnos2bgm review                      # 看候选、拿 series_key
-fnos2bgm search -k "标题"            # 确认条目 id（可看年份/集数）
-fnos2bgm map add --series '<key>' --subject <id> [--from N --to M]
+bangumi-syncer review                      # 看候选、拿 series_key
+bangumi-syncer search -k "标题"            # 确认条目 id（可看年份/集数）
+bangumi-syncer map add --series '<key>' --subject <id> [--from N --to M]
 ```
 
 `map add` 会自动清掉该区间的推送记录，下一轮重新按新映射推送；`review` 里对应条目随即消失。

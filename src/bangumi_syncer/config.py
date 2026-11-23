@@ -81,7 +81,7 @@ class AccountConfig:
 @dataclass(slots=True)
 class TargetConfig:
     type: str = "bangumi"
-    user_agent: str = "fnos2bgm/0.1.0 (+https://github.com/fnos2bgm/fnos2bgm)"
+    user_agent: str = "bangumi-syncer/0.1.0 (+https://github.com/wwb051221/Bangumi-syncer)"
     timeout_seconds: int = 20
     max_retries: int = 3
     min_interval_seconds: float = 1.0
@@ -233,15 +233,6 @@ def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
     return value
 
 
-def _typed(raw: dict[str, Any], key: str, default: Any, expected: type | tuple[type, ...], where: str) -> Any:
-    if key not in raw or raw[key] is None:
-        return default
-    value = raw[key]
-    if not isinstance(value, expected):
-        raise ConfigError("%s.%s has wrong type: expected %s, got %s" % (where, key, expected, type(value).__name__))
-    return value
-
-
 def _build(klass: type, raw: dict[str, Any], where: str) -> Any:
     """Instantiate a dataclass from a TOML table, ignoring unknown keys."""
     import dataclasses
@@ -316,7 +307,7 @@ def loads(text: str, path: str | None = None) -> Config:
 
 
 def load(path: str | None = None) -> Config:
-    candidates = [path] if path else [os.environ.get("FNOS2BGM_CONFIG", "")] + list(DEFAULT_CONFIG_PATHS)
+    candidates = [path] if path else [os.environ.get("BANGUMI_SYNCER_CONFIG", "")] + list(DEFAULT_CONFIG_PATHS)
     for candidate in candidates:
         if not candidate:
             continue
@@ -329,6 +320,6 @@ def load(path: str | None = None) -> Config:
         if path:
             raise ConfigError("config file not found: %s" % candidate)
     raise ConfigError(
-        "no config file found; looked in %s. Pass --config PATH or set FNOS2BGM_CONFIG."
+        "no config file found; looked in %s. Pass --config PATH or set BANGUMI_SYNCER_CONFIG."
         % ", ".join(c for c in candidates if c)
     )

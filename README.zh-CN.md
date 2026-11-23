@@ -1,9 +1,9 @@
-# fnos2bgm
+# Bangumi-syncer
 
 > 把 **飞牛影视（fnOS `trim.media`）** 的动漫观看进度自动同步到 **Bangumi 番组计划**。
 > 多用户、只读数据源、默认演练、可人工复核 —— 一个零依赖的容器。
 
-[![CI](https://github.com/fnos2bgm/fnos2bgm/actions/workflows/ci.yml/badge.svg)](https://github.com/fnos2bgm/fnos2bgm/actions/workflows/ci.yml)
+[![CI](https://github.com/wwb051221/Bangumi-syncer/actions/workflows/ci.yml/badge.svg)](https://github.com/wwb051221/Bangumi-syncer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Image size](https://img.shields.io/badge/image-~55MB-informational.svg)](#docker)
@@ -19,7 +19,7 @@
 
 ```
 ┌─────────────────────┐        ┌──────────────────┐        ┌─────────────────┐
-│ 飞牛影视 trim.media │        │     fnos2bgm     │        │   api.bgm.tv    │
+│ 飞牛影视 trim.media │        │  Bangumi-syncer  │        │   api.bgm.tv    │
 │                     │  只读  │                  │  HTTPS │                 │
 │ trimmedia.db ───────┼───────▶│ 快照 → 匹配 →    │───────▶│ 章节收藏 / 收藏 │
 │  (root 700, 关闭)   │  VACUUM│ 幂等推送          │  OAuth │  状态           │
@@ -57,8 +57,8 @@
 ## 快速开始（Docker Compose，推荐）
 
 ```bash
-git clone https://github.com/fnos2bgm/fnos2bgm.git
-cd fnos2bgm
+git clone https://github.com/wwb051221/Bangumi-syncer.git
+cd Bangumi-syncer
 cp config.example.toml config.toml
 ```
 
@@ -72,14 +72,14 @@ cp config.example.toml config.toml
 **3. 授权**（令牌会存进 `/data/state/state.db`，7 天自动续期）：
 
 ```bash
-docker compose run --rm fnos2bgm oauth --account main --manual
+docker compose run --rm bangumi-syncer oauth --account main --manual
 ```
 
 **4. 先演练一轮**（`config.toml` 里保持 `dry_run = true`）：
 
 ```bash
-docker compose run --rm fnos2bgm run --once
-docker compose logs --tail=100 fnos2bgm
+docker compose run --rm bangumi-syncer run --once
+docker compose logs --tail=100 bangumi-syncer
 ```
 
 > 演练模式只调用 Bangumi 的公开接口（搜索、章节列表），**不需要先授权**，
@@ -96,7 +96,7 @@ docker compose logs -f
 状态页：<http://飞牛IP:8099/>（只读，展示最近运行、映射表、待复核条目）。
 
 > 没有 Docker？也可以直接跑：
-> `pip install .` → `fnos2bgm --config config.toml run`
+> `pip install .` → `bangumi-syncer --config config.toml run`
 > （需要能读到 `trimmedia.db`，即 root 或已放宽 ACL）。
 
 ## 配置说明
@@ -140,8 +140,8 @@ watch_ratio = 0.95        # 该用户单独覆盖阈值
 ```
 
 ```bash
-fnos2bgm oauth --account me
-fnos2bgm oauth --account kids
+bangumi-syncer oauth --account me
+bangumi-syncer oauth --account kids
 ```
 
 每个用户的进度完全独立；同一个 Bangumi 账号被多个飞牛用户共用时，推送结果为并集（已推送的集不会重复写）。
@@ -164,7 +164,7 @@ fnos2bgm oauth --account kids
 **查看待复核：**
 
 ```bash
-fnos2bgm review
+bangumi-syncer review
 ```
 
 ```
@@ -173,23 +173,23 @@ fnos2bgm review
   reason best candidate 0.394 < min_score 0.860
   subject  score  name_cn   name      year  eps
   148295   0.394  茶啊二中  茶啊二中   2014  10
-  -> fnos2bgm map add --account main --series 'fnos:2db5e6c8…:s1' --subject 148295
+  -> bangumi-syncer map add --account main --series 'fnos:2db5e6c8…:s1' --subject 148295
   -> for a merged season add an explicit range, e.g. --from 25 --to 48
 ```
 
 **手动指定**（也可以直接按 `bgm.tv/subject/<id>` 的 id 填）：
 
 ```bash
-fnos2bgm search -k "茶啊二中"
-fnos2bgm map add --account main --series 'fnos:xxxx:s1' --subject 148295
+bangumi-syncer search -k "茶啊二中"
+bangumi-syncer map add --account main --series 'fnos:xxxx:s1' --subject 148295
 ```
 
 **合并季拆分**（飞牛把多季放在同一个 Season 里，如 1–55 集）：
 
 ```bash
-fnos2bgm map add --account main --series 'fnos:xxxx:s1' --subject 420628 --from 1  --to 24
-fnos2bgm map add --account main --series 'fnos:xxxx:s1' --subject 486347 --from 25 --to 48
-fnos2bgm map add --account main --series 'fnos:xxxx:s1' --subject 568244 --from 49 --to 60
+bangumi-syncer map add --account main --series 'fnos:xxxx:s1' --subject 420628 --from 1  --to 24
+bangumi-syncer map add --account main --series 'fnos:xxxx:s1' --subject 486347 --from 25 --to 48
+bangumi-syncer map add --account main --series 'fnos:xxxx:s1' --subject 568244 --from 49 --to 60
 ```
 
 区间映射按「本地第 N 集 → 该条目的第 N-起始集+1 集」换算，所以拆分后的编号不需要对齐 Bangumi 的绝对集号。
@@ -198,14 +198,14 @@ fnos2bgm map add --account main --series 'fnos:xxxx:s1' --subject 568244 --from 
 ## 状态页与命令
 
 ```bash
-fnos2bgm run                 # 常驻循环（容器默认命令）
-fnos2bgm run --once          # 只跑一轮，适合 cron / 排障
-fnos2bgm status              # 最近运行、令牌、统计
-fnos2bgm review [--json]     # 待复核条目及候选
-fnos2bgm map list|add|remove # 映射管理
-fnos2bgm search -k 关键词     # 查 Bangumi 条目 id
-fnos2bgm dump [--json]       # 媒体服务器解析结果（不写任何东西）
-fnos2bgm oauth --account X   # 授权（--manual 适合远程 SSH）
+bangumi-syncer run                 # 常驻循环（容器默认命令）
+bangumi-syncer run --once          # 只跑一轮，适合 cron / 排障
+bangumi-syncer status              # 最近运行、令牌、统计
+bangumi-syncer review [--json]     # 待复核条目及候选
+bangumi-syncer map list|add|remove # 映射管理
+bangumi-syncer search -k 关键词     # 查 Bangumi 条目 id
+bangumi-syncer dump [--json]       # 媒体服务器解析结果（不写任何东西）
+bangumi-syncer oauth --account X   # 授权（--manual 适合远程 SSH）
 ```
 
 全局参数：`--config PATH`、`--dry-run/--no-dry-run`、`--log-level`、`--log-format json`。
@@ -227,7 +227,7 @@ fnos2bgm oauth --account X   # 授权（--manual 适合远程 SSH）
 <summary><b>读不到 trimmedia.db（Permission denied）</b></summary>
 
 数据库是 `root:root 0700`。容器需要以 root 运行，或改用 snapshot 模式。
-如果连 root 都读不到，检查飞牛是不是把目录搬到了别处：`fnos2bgm dump` 会打印它尝试的路径。
+如果连 root 都读不到，检查飞牛是不是把目录搬到了别处：`bangumi-syncer dump` 会打印它尝试的路径。
 </details>
 
 <details>
@@ -247,7 +247,7 @@ fnos2bgm oauth --account X   # 授权（--manual 适合远程 SSH）
 <summary><b>一直显示 “no token”</b></summary>
 
 令牌有效期 7 天、用 refresh token 自动续期；但如果你在 Bangumi 侧撤销了应用授权，就需要重跑
-`fnos2bgm oauth --account main`。日志里出现 `auth error` 时退出码为 3。
+`bangumi-syncer oauth --account main`。日志里出现 `auth error` 时退出码为 3。
 </details>
 
 <details>
@@ -282,7 +282,7 @@ ruff check src tests
 目录：
 
 ```
-src/fnos2bgm/
+src/bangumi_syncer/
   config.py        配置解析（TOML + ${ENV} 展开）
   models.py        数据模型与“看完”判定
   sources/fnos.py  飞牛数据库适配（快照、schema 探测、路径过滤）

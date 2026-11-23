@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sys
 import time
 
@@ -43,12 +42,12 @@ def setup_logging(level: str = "INFO", fmt: str = "text") -> None:
 
     handler = None
     for h in root.handlers:
-        if getattr(h, "_fnos2bgm", False):
+        if getattr(h, "_bangumi_syncer", False):
             handler = h
             break
     if handler is None:
         handler = logging.StreamHandler(stream=sys.stdout)
-        handler._fnos2bgm = True  # type: ignore[attr-defined]
+        handler._bangumi_syncer = True  # type: ignore[attr-defined]
         root.addHandler(handler)
 
     handler.setFormatter(JsonFormatter() if fmt == "json" else TextFormatter())
@@ -58,8 +57,4 @@ def setup_logging(level: str = "INFO", fmt: str = "text") -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
-    return logging.getLogger("fnos2bgm." + name if not name.startswith("fnos2bgm") else name)
-
-
-def debug_enabled() -> bool:
-    return os.environ.get("FNOS2BGM_DEBUG", "") not in ("", "0", "false")
+    return logging.getLogger("bangumi_syncer." + name if not name.startswith("bangumi_syncer") else name)

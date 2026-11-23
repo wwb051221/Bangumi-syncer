@@ -27,7 +27,7 @@ class TrackerError(Exception):
 
 
 class AuthError(TrackerError):
-    """Token missing/expired/invalid - the user has to run ``fnos2bgm oauth``."""
+    """Token missing/expired/invalid - the user has to run ``bangumi-syncer oauth``."""
 
 
 @dataclass(frozen=True, slots=True)

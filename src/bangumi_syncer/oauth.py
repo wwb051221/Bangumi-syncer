@@ -34,9 +34,9 @@ AUTHORIZE_URL = "https://bgm.tv/oauth/authorize"
 TOKEN_URL = "https://bgm.tv/oauth/access_token"
 DEFAULT_PORT = 8765
 
-_SUCCESS_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>fnos2bgm</title></head>
+_SUCCESS_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Bangumi-syncer</title></head>
 <body style="font-family:system-ui,sans-serif;padding:3rem;max-width:38rem;margin:auto">
-<h2>✅ fnos2bgm 授权完成</h2>
+<h2>✅ Bangumi-syncer 授权完成</h2>
 <p>Bangumi 授权已接收，可以关闭此页面回到终端。</p>
 <p style="color:#666">Authorization received. You can close this tab.</p>
 </body></html>"""

@@ -66,7 +66,7 @@ class BangumiTracker(Tracker):
         tokens = self.store.tokens(self.account)
         if tokens is None or not tokens.access_token:
             raise AuthError(
-                'no Bangumi token for account %r. Run: fnos2bgm oauth --account %s'
+                'no Bangumi token for account %r. Run: bangumi-syncer oauth --account %s'
                 % (self.account, self.account)
             )
         return tokens
@@ -74,7 +74,7 @@ class BangumiTracker(Tracker):
     def _refresh(self, tokens: Tokens) -> Tokens:
         if not tokens.refresh_token:
             raise AuthError(
-                "Bangumi refresh token missing for account %r; re-run: fnos2bgm oauth --account %s"
+                "Bangumi refresh token missing for account %r; re-run: bangumi-syncer oauth --account %s"
                 % (self.account, self.account)
             )
         log.info("refreshing Bangumi access token for %r", self.account)
@@ -92,7 +92,7 @@ class BangumiTracker(Tracker):
             )
         except ApiError as exc:
             raise AuthError(
-                "Bangumi token refresh rejected (%s). Run: fnos2bgm oauth --account %s"
+                "Bangumi token refresh rejected (%s). Run: bangumi-syncer oauth --account %s"
                 % (exc.status, self.account)
             ) from exc
         return self._store_token_payload(resp.json(), fallback_refresh=tokens.refresh_token)
@@ -122,7 +122,7 @@ class BangumiTracker(Tracker):
         except ApiError as exc:
             if exc.status in (401, 403):
                 raise AuthError(
-                    "Bangumi rejected the token for account %r. Re-run: fnos2bgm oauth --account %s"
+                    "Bangumi rejected the token for account %r. Re-run: bangumi-syncer oauth --account %s"
                     % (self.account, self.account)
                 ) from exc
             log.debug("/v0/me unavailable (%s), continuing", exc.status)

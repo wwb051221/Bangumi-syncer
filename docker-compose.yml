@@ -1,15 +1,15 @@
-# fnos2bgm on fnOS. `docker compose up -d` in this directory.
+# Bangumi-syncer on fnOS. `docker compose up -d` in this directory.
 #
 # 1. cp config.example.toml config.toml   and edit it
-# 2. docker compose run --rm fnos2bgm oauth --account main --manual
+# 2. docker compose run --rm bangumi-syncer oauth --account main --manual
 # 3. keep app.dry_run = true for one or two rounds, check `docker compose logs -f`
 # 4. set app.dry_run = false and `docker compose up -d`
 
 services:
-  fnos2bgm:
-    image: ghcr.io/fnos2bgm/fnos2bgm:latest
+  bangumi-syncer:
+    image: ghcr.io/wwb051221/bangumi-syncer:latest
     build: .
-    container_name: fnos2bgm
+    container_name: bangumi-syncer
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai

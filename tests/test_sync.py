@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from conftest import FakeTracker, make_config, make_episodes
 
-from fnos2bgm import sources
-from fnos2bgm.state import StateStore
-from fnos2bgm.sync import SyncEngine
-from fnos2bgm.trackers import COLLECTED, DOING, AuthError, SubjectHit, TrackerError
+from bangumi_syncer import sources
+from bangumi_syncer.state import StateStore
+from bangumi_syncer.sync import SyncEngine
+from bangumi_syncer.trackers import COLLECTED, DOING, AuthError, SubjectHit, TrackerError
 
 PHARMACY_CN = "\u836f\u5c4b\u5c11\u5973\u7684\u5462\u5583"
 PHARMACY_JP = "\u85ac\u5c4b\u306e\u3072\u3068\u308a\u3054\u3068"

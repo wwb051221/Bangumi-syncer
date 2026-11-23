@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 项目更名为 **Bangumi-syncer**：仓库/发行名 `bangumi-syncer`、Python 包 `bangumi_syncer`、
+  命令行 `bangumi-syncer`、镜像 `ghcr.io/wwb051221/bangumi-syncer`、容器名 `bangumi-syncer`。
+  配置环境变量由 `FNOS2BGM_CONFIG` 改为 `BANGUMI_SYNCER_CONFIG`；旧状态库结构与行为不变。
+
 ## [0.1.0] - 2026-11-23
 
 首个可用版本，在 fnOS 1.2.1102 / 飞牛影视实测库（13 季 / 296 集）上验证。
@@ -27,5 +33,5 @@
 - Docker 镜像（零运行时依赖）、docker compose 示例、GitHub Actions CI 与多架构发布工作流。
 - 81 个离线测试（模拟飞牛库 + 假 tracker），覆盖解析、匹配、幂等、拆季、鉴权失败等场景。
 
-[Unreleased]: https://github.com/fnos2bgm/fnos2bgm/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/fnos2bgm/fnos2bgm/releases/tag/v0.1.0
+[Unreleased]: https://github.com/wwb051221/Bangumi-syncer/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/wwb051221/Bangumi-syncer/releases/tag/v0.1.0

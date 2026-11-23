@@ -1,4 +1,4 @@
-"""fnos2bgm — sync fnOS (飞牛影视) anime watch progress to Bangumi.
+"""Bangumi-syncer — sync fnOS (飞牛影视) anime watch progress to Bangumi.
 
 The package is intentionally dependency-free: it only uses the Python standard
 library so the container stays small and auditable.

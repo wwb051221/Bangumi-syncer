@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from fnos2bgm.http import ApiError, HttpClient, NetworkError
+from bangumi_syncer.http import ApiError, HttpClient, NetworkError
 
 
 class Recorder:
@@ -55,7 +55,7 @@ def server_factory():
 
 def test_json_request(server_factory):
     recorder, url = server_factory([(200, {"Content-Type": "application/json"}, {"ok": True})])
-    client = HttpClient("fnos2bgm-test/0", timeout=5, max_retries=0, min_interval=0)
+    client = HttpClient("bangumi-syncer-test/0", timeout=5, max_retries=0, min_interval=0)
     resp = client.request("GET", url + "/hello")
     assert resp.status == 200
     assert resp.json() == {"ok": True}
@@ -67,7 +67,7 @@ def test_retries_on_500(server_factory):
         (500, {}, {"error": "boom"}),
         (200, {"Content-Type": "application/json"}, {"ok": 1}),
     ])
-    client = HttpClient("fnos2bgm-test/0", timeout=5, max_retries=1, min_interval=0)
+    client = HttpClient("bangumi-syncer-test/0", timeout=5, max_retries=1, min_interval=0)
     resp = client.request("GET", url + "/retry")
     assert resp.status == 200
     assert len(recorder.requests) == 2
@@ -78,14 +78,14 @@ def test_honours_retry_after(server_factory):
         (429, {"Retry-After": "0.01"}, {"error": "slow down"}),
         (200, {"Content-Type": "application/json"}, {"ok": 1}),
     ])
-    client = HttpClient("fnos2bgm-test/0", timeout=5, max_retries=1, min_interval=0)
+    client = HttpClient("bangumi-syncer-test/0", timeout=5, max_retries=1, min_interval=0)
     assert client.request("GET", url + "/limited").status == 200
     assert len(recorder.requests) == 2
 
 
 def test_client_error_is_not_retried(server_factory):
     recorder, url = server_factory([(400, {}, {"error": "bad request"})])
-    client = HttpClient("fnos2bgm-test/0", timeout=5, max_retries=3, min_interval=0)
+    client = HttpClient("bangumi-syncer-test/0", timeout=5, max_retries=3, min_interval=0)
     with pytest.raises(ApiError) as excinfo:
         client.request("GET", url + "/bad")
     assert excinfo.value.status == 400
@@ -94,6 +94,6 @@ def test_client_error_is_not_retried(server_factory):
 
 def test_network_error(tmp_path):
     # nothing listens on port 1 on the loopback interface
-    client = HttpClient("fnos2bgm-test/0", timeout=2, max_retries=0, min_interval=0)
+    client = HttpClient("bangumi-syncer-test/0", timeout=2, max_retries=0, min_interval=0)
     with pytest.raises(NetworkError):
         client.request("GET", "http://127.0.0.1:1/nope")

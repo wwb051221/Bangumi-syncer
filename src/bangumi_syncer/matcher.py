@@ -10,7 +10,7 @@ always empty in trim.media), so matching is heuristic:
    candidate title;
 4. only auto-map when the best score is high enough *and* clearly ahead of the
    runner-up. Everything else goes to a review queue where a human picks the
-   right subject with ``fnos2bgm map add``.
+   right subject with ``bangumi-syncer map add``.
 
 This is deliberately conservative: a wrong mapping writes wrong watch history,
 a missing mapping just waits one more day for a human decision.

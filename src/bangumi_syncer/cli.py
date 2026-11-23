@@ -1,13 +1,13 @@
 """Command line interface.
 
-    fnos2bgm run            # sync forever (default command inside the container)
-    fnos2bgm run --once     # one shot, useful for cron / debugging
-    fnos2bgm oauth          # obtain a Bangumi token
-    fnos2bgm status         # what happened recently
-    fnos2bgm review         # shows that still need a manual subject
-    fnos2bgm map ...        # inspect / fix season -> subject mappings
-    fnos2bgm search         # look up Bangumi subjects
-    fnos2bgm dump           # what the media server reports, as JSON
+    bangumi-syncer run            # sync forever (default command inside the container)
+    bangumi-syncer run --once     # one shot, useful for cron / debugging
+    bangumi-syncer oauth          # obtain a Bangumi token
+    bangumi-syncer status         # what happened recently
+    bangumi-syncer review         # shows that still need a manual subject
+    bangumi-syncer map ...        # inspect / fix season -> subject mappings
+    bangumi-syncer search         # look up Bangumi subjects
+    bangumi-syncer dump           # what the media server reports, as JSON
 """
 
 from __future__ import annotations
@@ -166,7 +166,7 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
             if not result.ok and result.error:
                 log.warning("run failed: %s", result.error)
                 if "oauth" in result.error.lower() or "token" in result.error.lower():
-                    log.warning("hint: fnos2bgm oauth --account <name>")
+                    log.warning("hint: bangumi-syncer oauth --account <name>")
             stop.wait(interval)
         log.info("sync loop stopped")
     finally:
@@ -206,7 +206,7 @@ def cmd_status(cfg: Config, args: argparse.Namespace) -> int:
         return EXIT_OK
 
     tz = cfg.app.timezone
-    print("fnos2bgm v%s  %s" % (__version__, "DRY-RUN" if cfg.app.dry_run else "LIVE"))
+    print("Bangumi-syncer v%s  %s" % (__version__, "DRY-RUN" if cfg.app.dry_run else "LIVE"))
     print("config   %s" % (cfg.path or "-"))
     print("state db %s" % cfg.app.state_db)
     print("source   %s/%s  (%s)" % (
@@ -232,7 +232,7 @@ def cmd_status(cfg: Config, args: argparse.Namespace) -> int:
          for r in data["runs"]],
     ))
     if data["review"]:
-        print("\n%d show(s) need a manual subject: run `fnos2bgm review`" % len(data["review"]))
+        print("\n%d show(s) need a manual subject: run `bangumi-syncer review`" % len(data["review"]))
     return EXIT_OK
 
 
@@ -270,11 +270,11 @@ def cmd_review(cfg: Config, args: argparse.Namespace) -> int:
                 [[c["subject_id"], c.get("score"), c.get("name_cn") or "", c.get("name") or "",
                   c.get("year") or "", c.get("eps") or ""] for c in candidates],
             ))
-            print("  -> fnos2bgm map add --account %s --series '%s' --subject %s"
+            print("  -> bangumi-syncer map add --account %s --series '%s' --subject %s"
                   % (item["account"], item["series_key"],
                      candidates[0]["subject_id"] if candidates else "<id>"))
         else:
-            print("  no search results; find the subject id with `fnos2bgm search -k \"...\"`")
+            print("  no search results; find the subject id with `bangumi-syncer search -k \"...\"`")
         print("  -> for a merged season add an explicit range, e.g. --from 25 --to 48")
     return EXIT_OK
 
@@ -312,7 +312,7 @@ def cmd_map(cfg: Config, args: argparse.Namespace) -> int:
             return EXIT_OK
 
         if not args.series:
-            raise ConfigError("--series is required (the key shown by `fnos2bgm review`)")
+            raise ConfigError("--series is required (the key shown by `bangumi-syncer review`)")
 
         if args.action == "add":
             name = args.name
@@ -435,10 +435,10 @@ def cmd_dump(cfg: Config, args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="fnos2bgm",
+        prog="bangumi-syncer",
         description="Sync fnOS (飞牛影视) anime watch progress to Bangumi.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Docs: https://github.com/fnos2bgm/fnos2bgm",
+        epilog="Docs: https://github.com/wwb051221/Bangumi-syncer",
     )
     parser.add_argument("--config", help="path to config.toml (default: /config/config.toml or ./config.toml)")
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="override app.log_level")
@@ -447,7 +447,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="never write to Bangumi (default from config)")
     parser.add_argument("--no-dry-run", dest="dry_run", action="store_false",
                         help="really write to Bangumi")
-    parser.add_argument("--version", action="version", version="fnos2bgm " + __version__)
+    parser.add_argument("--version", action="version", version="bangumi-syncer " + __version__)
 
     subparsers = parser.add_subparsers(dest="command", metavar="command")
     subparsers.required = True
@@ -485,7 +485,7 @@ def build_parser() -> argparse.ArgumentParser:
     map_list.set_defaults(func=cmd_map)
 
     map_add = map_sub.add_parser("add", help="add or override a mapping")
-    map_add.add_argument("--series", required=True, help="series key from `fnos2bgm review`")
+    map_add.add_argument("--series", required=True, help="series key from `bangumi-syncer review`")
     map_add.add_argument("--subject", required=True, type=int, help="Bangumi subject id")
     map_add.add_argument("--from", dest="ep_from", type=int, default=1, help="first local episode (default 1)")
     map_add.add_argument("--to", dest="ep_to", type=int, default=9999, help="last local episode (default 9999)")

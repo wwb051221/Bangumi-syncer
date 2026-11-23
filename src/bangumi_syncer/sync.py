@@ -198,7 +198,7 @@ class SyncEngine:
         session = self._sessions[account_name]
         if account_name not in self._sessions_ready:
             # A dry run only uses public endpoints (search, episode lists), so it
-            # works before `fnos2bgm oauth` has ever been run.
+            # works before `bangumi-syncer oauth` has ever been run.
             if not self.cfg.app.dry_run:
                 session.tracker.ensure_ready()
             else:
@@ -352,7 +352,7 @@ class SyncEngine:
                         [number],
                         subject_id,
                         "subject %d has %d episode(s); local episode %d maps to #%d - a split mapping "
-                        "may be needed (fnos2bgm map add --series %s --subject <id> --from N --to M)"
+                        "may be needed (bangumi-syncer map add --series %s --subject <id> --from N --to M)"
                         % (subject_id, len(episodes), number, index + 1, series.key),
                         state="unmapped",
                     )
@@ -407,7 +407,7 @@ class SyncEngine:
             result.unmatched += 1
             log.warning(
                 "no confident Bangumi match for %r (season %d, %d eps): %s -- review with "
-                "`fnos2bgm review` then `fnos2bgm map add`",
+                "`bangumi-syncer review` then `bangumi-syncer map add`",
                 series.title,
                 series.season,
                 series.episode_count,
@@ -420,7 +420,7 @@ class SyncEngine:
             result.unmatched += 1
             log.warning(
                 "%r S%d: %d episode(s) not covered by any mapping (e.g. %d) - add a range mapping with "
-                "`fnos2bgm map add --series %s --subject <id> --from N --to M`",
+                "`bangumi-syncer map add --series %s --subject <id> --from N --to M`",
                 series.title,
                 series.season,
                 len(missing),

@@ -7,9 +7,9 @@ import urllib.request
 
 from conftest import make_config
 
-from fnos2bgm.config import ServerConfig
-from fnos2bgm.server import StatusServer, StatusState, build_status
-from fnos2bgm.state import StateStore
+from bangumi_syncer.config import ServerConfig
+from bangumi_syncer.server import StatusServer, StatusState, build_status
+from bangumi_syncer.state import StateStore
 
 
 def free_port() -> int:
@@ -39,11 +39,11 @@ def test_status_page_and_api(tmp_path, fnos_db):
     server.start()
     try:
         page = urllib.request.urlopen(server.address, timeout=10).read().decode("utf-8")
-        assert "fnos2bgm" in page
+        assert "Bangumi-syncer" in page
         assert "DRY-RUN" in page
         assert "\u9b54\u5361\u5c11\u5973\u6a31" in page
         assert "\u672a\u5339\u914d\u756a\u7ec4" in page
-        assert "fnos2bgm map add" in page
+        assert "bangumi-syncer map add" in page
 
         api = json.loads(urllib.request.urlopen(server.address + "api/status", timeout=10).read())
         assert api["dry_run"] is True

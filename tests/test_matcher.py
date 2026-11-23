@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from fnos2bgm.config import MatchConfig
-from fnos2bgm.matcher import (
+from bangumi_syncer.config import MatchConfig
+from bangumi_syncer.matcher import (
     Matcher,
     effective_season,
     normalize_title,
     parse_season_hint,
     strip_season_marker,
 )
-from fnos2bgm.models import SeriesRef
-from fnos2bgm.trackers.base import SubjectHit
+from bangumi_syncer.models import SeriesRef
+from bangumi_syncer.trackers.base import SubjectHit
 
 PHARMACY_CN = "\u836f\u5c4b\u5c11\u5973\u7684\u5462\u5583"
 PHARMACY_JP = "\u85ac\u5c4b\u306e\u3072\u3068\u308a\u3054\u3068"

@@ -5,8 +5,8 @@
 ## 开发环境
 
 ```bash
-git clone https://github.com/fnos2bgm/fnos2bgm.git
-cd fnos2bgm
+git clone https://github.com/wwb051221/Bangumi-syncer.git
+cd Bangumi-syncer
 python -m venv .venv
 . .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
@@ -23,7 +23,7 @@ ruff check src tests
 
 ## 加一个新的数据源（Jellyfin / Emby / Plex）
 
-1. 在 `src/fnos2bgm/sources/` 下新建模块，实现 `SourceAdapter`：
+1. 在 `src/bangumi_syncer/sources/` 下新建模块，实现 `SourceAdapter`：
    `prepare()` 与 `snapshot() -> SourceSnapshot`；
 2. `SeriesRef.key` 必须稳定且是**季粒度**；`episode_count` 填该季已识别集数；
 3. `update_time` → epoch 秒、`runtime` → 秒；
@@ -37,10 +37,10 @@ ruff check src tests
 
 ```bash
 # 需要 NAS 上的一份快照
-fnos2bgm --config config.toml dump --json > /tmp/before.json
+bangumi-syncer --config config.toml dump --json > /tmp/before.json
 # 改代码
-fnos2bgm --config config.toml dump --json > /tmp/after.json
-fnos2bgm review          # 复核队列变长通常意味着变保守了，变短要确认没有错配
+bangumi-syncer --config config.toml dump --json > /tmp/after.json
+bangumi-syncer review          # 复核队列变长通常意味着变保守了，变短要确认没有错配
 ```
 
 判断标准：**错配（把 A 写到 B）权重远高于漏配**。如果一次调整让某部番从「自动」变成「复核」，
@@ -57,3 +57,8 @@ fnos2bgm review          # 复核队列变长通常意味着变保守了，变�
 
 `pyproject.toml` 里的版本号 + 打 tag `vX.Y.Z` 会触发多架构镜像与 sdist 发布；
 CHANGELOG 按 Keep a Changelog 维护。
+
+仓库地址暂按 `github.com/wwb051221/Bangumi-syncer` 填写。换成你自己的 GitHub 账号后，
+请同时更新：README 徽章与 clone 地址、`pyproject.toml` 的 `Homepage` / `Issues`、
+`Dockerfile` 的 `org.opencontainers.image.source`、`.github/workflows/release.yml` 的镜像名。
+

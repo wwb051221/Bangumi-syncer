@@ -13,6 +13,9 @@ venv/
 .coverage
 htmlcov/
 
+# Local development artefacts (real NAS snapshot, scratch scripts)
+.dev/
+
 # Runtime data (never commit tokens or snapshots)
 data/
 config.toml

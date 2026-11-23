@@ -1,4 +1,4 @@
-"""``python -m fnos2bgm`` entry point."""
+"""``python -m bangumi_syncer`` entry point."""
 
 import sys
 

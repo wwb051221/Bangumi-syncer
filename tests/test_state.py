@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from fnos2bgm.state import StateStore, Tokens
+from bangumi_syncer.state import StateStore, Tokens
 
 
 @pytest.fixture()
