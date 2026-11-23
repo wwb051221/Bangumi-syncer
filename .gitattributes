@@ -1,0 +1,7 @@
+# Normalise line endings: the project targets Linux containers.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.woff2 binary

@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fnos2bgm"
+version = "0.1.0"
+description = "Sync fnOS (飞牛影视) anime watch progress to Bangumi"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "fnos2bgm contributors" }]
+keywords = ["fnos", "飞牛影视", "bangumi", "anime", "watch-progress", "docker", "self-hosted"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/fnos2bgm/fnos2bgm"
+Documentation = "https://github.com/fnos2bgm/fnos2bgm#readme"
+Issues = "https://github.com/fnos2bgm/fnos2bgm/issues"
+
+[project.scripts]
+fnos2bgm = "fnos2bgm.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# E501: line length is handled by the formatter/editor.
+# UP031: printf-style formatting is used deliberately (keeps log lines greppable).
+ignore = ["E501", "UP031"]
+
+[tool.ruff.format]
+quote-style = "double"

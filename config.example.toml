@@ -1,0 +1,128 @@
+# ============================================================================
+# fnos2bgm 配置示例    cp config.example.toml config.toml  然后按需修改
+# ----------------------------------------------------------------------------
+# 字符串支持 ${ENV_VAR} 和 ${ENV_VAR:-默认值} 展开，
+# 因此 client_secret 这类敏感值可以放在容器的环境变量里。
+# ============================================================================
+
+[app]
+# 日志与状态页使用的时间显示时区
+timezone = "Asia/Shanghai"
+# true = 只读演练：从不去写 Bangumi，只记录“本应做什么”。
+# 首次部署请保持 true，观察一轮日志确认匹配无误后再改 false。
+dry_run = true
+# 状态数据库（令牌、映射、推送记录、运行日志）。容器内请指向 /data 卷。
+state_db = "/data/state/state.db"
+log_level = "INFO"
+# "text" 适合人看；"json" 适合 Loki/ELK 采集
+log_format = "text"
+
+# ---------------------------------------------------------------------------
+# 数据来源：飞牛影视 trim.media
+# ---------------------------------------------------------------------------
+[source]
+type = "fnos"
+# live     = 自己从服务器数据库做一致性快照（推荐，容器里挂只读即可）
+# snapshot = 直接读取别人准备好的快照文件（宿主 cron / 另一台机器同步过来）
+mode = "live"
+# live 模式下的源数据库（挂载目录见 docker-compose.yml）
+db_path = "/source/trimmedia.db"
+# live 模式：快照写到这里；snapshot 模式：从这里读
+snapshot_path = "/data/snapshot/origin.db"
+
+# 只看动漫库。留空 [] 表示不过滤（会连电视剧、电影一起，通常不是你想要的）。
+include_paths = ["/vol1/1000/影片/动漫"]
+exclude_paths = []
+# 跳过 Season 0（特别篇/SP），它们一般不对应 Bangumi 本篇章节
+skip_season_zero = true
+# 一季至少要有多少集才参与同步，用来过滤误刮削出来的孤立条目
+min_episodes = 1
+
+# 当飞牛升级、表结构变化时，可以不改代码直接替换 SQL。
+# 需要返回的列见 docs/schema.md（episodes_query / plays_query / users_query）。
+[source.fnos]
+episodes_query = ""
+plays_query = ""
+users_query = ""
+
+# ---------------------------------------------------------------------------
+# 同步行为
+# ---------------------------------------------------------------------------
+[sync]
+# 轮询间隔（秒）。飞牛没有事件回调，只能轮询；300 秒足够。
+interval_seconds = 300
+# 观看进度达到片长的多少比例算“看完”。
+# 实测很多播放器在片尾处退出时 watched 仍是 0，所以以进度比例为主。
+watch_ratio = 0.9
+# 进度不足这么多秒时忽略（防止刚点开就被算作看完）
+min_position_seconds = 60
+# 有已看集数时把条目收藏状态设为“在看”
+mark_in_progress = true
+# 已播出的集全部看完时设为“看过”
+mark_completed = true
+# 同步前先从 Bangumi 读取已有的章节收藏，避免重复写入（多一次 GET/条目）
+verify_remote = true
+
+# ---------------------------------------------------------------------------
+# 目标：Bangumi
+# ---------------------------------------------------------------------------
+[target]
+type = "bangumi"
+# Bangumi 要求带可识别的 User-Agent，建议改成你自己的仓库地址
+user_agent = "fnos2bgm/0.1.0 (+https://github.com/fnos2bgm/fnos2bgm)"
+timeout_seconds = 20
+max_retries = 3
+# 每个账号两次请求之间的最小间隔（秒）。1 秒对社区服务比较礼貌。
+min_interval_seconds = 1.0
+
+# 一个 [[target.accounts]] 对应一个 Bangumi 账号。
+# 访问令牌在 `fnos2bgm oauth` 后保存在 state_db 里，不写回本文件。
+[[target.accounts]]
+name = "main"
+client_id = "${BGM_CLIENT_ID}"
+client_secret = "${BGM_CLIENT_SECRET}"
+# 必须与 https://bgm.tv/dev/apps 里登记的回调地址完全一致
+redirect_uri = "http://127.0.0.1:8765/oauth/callback"
+
+# ---------------------------------------------------------------------------
+# 多用户：飞牛账号 -> Bangumi 账号
+# ---------------------------------------------------------------------------
+# fnos_user 填飞牛的用户名（或 guid），每个用户独立计算进度、独立推送。
+# 多个飞牛用户可以指向同一个 Bangumi 账号；不同用户也可以各用各的账号。
+
+[[users]]
+fnos_user = "wwb051221"
+account = "main"
+enabled = true
+# 该用户单独覆盖全局阈值（可省略）
+# watch_ratio = 0.95
+# 该用户只看某个子目录（可省略；与 source.include_paths 取交集）
+# include_paths = ["/vol1/1000/影片/动漫/本季新番"]
+
+# [[users]]
+# fnos_user = "2708"
+# account = "kids"
+# enabled = false
+
+# ---------------------------------------------------------------------------
+# 自动匹配
+# ---------------------------------------------------------------------------
+[match]
+# 标题+年份+集数综合评分低于此值就不自动映射，进入人工复核队列
+min_score = 0.86
+# 第一名与第二名差距小于此值时视为“有歧义”，同样进入人工复核
+min_margin = 0.06
+# 每次搜索取多少个候选
+search_limit = 8
+# Bangumi 条目类型，2 = 动画（本工具只同步动漫）
+accept_types = [2]
+# 自动匹配是否直接视为“已确认”（一般保持 false，让人工 review 优先）
+auto_confirm = false
+
+# ---------------------------------------------------------------------------
+# 状态页（只读，方便查看最近同步与待复核条目）
+# ---------------------------------------------------------------------------
+[server]
+# 注意：Dockerfile 的 HEALTHCHECK 探测的是这个端口；关掉它容器会变成 unhealthy。
+enabled = true
+listen = "0.0.0.0:8099"

@@ -1,0 +1,34 @@
+# fnos2bgm on fnOS. `docker compose up -d` in this directory.
+#
+# 1. cp config.example.toml config.toml   and edit it
+# 2. docker compose run --rm fnos2bgm oauth --account main --manual
+# 3. keep app.dry_run = true for one or two rounds, check `docker compose logs -f`
+# 4. set app.dry_run = false and `docker compose up -d`
+
+services:
+  fnos2bgm:
+    image: ghcr.io/fnos2bgm/fnos2bgm:latest
+    build: .
+    container_name: fnos2bgm
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      # Secrets can stay out of config.toml (which uses ${VAR} expansion):
+      # BGM_CLIENT_ID: "your-client-id"
+      # BGM_CLIENT_SECRET: "your-client-secret"
+    volumes:
+      - ./config.toml:/config/config.toml:ro
+      - ./data:/data
+      # fnOS 影视数据库目录，只读挂载（不要挂整个 /usr/local/apps）
+      - /usr/local/apps/@appdata/trim.media/database:/source:ro
+    ports:
+      - "8099:8099"
+    # trim.media 的数据库是 root:root 0700，读取它需要 root。
+    # 如果改用 snapshot 模式（宿主 cron 生成快照并挂到 /data/snapshot），
+    # 可以删掉下面这行，容器会以镜像默认用户运行。
+    user: "0:0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
