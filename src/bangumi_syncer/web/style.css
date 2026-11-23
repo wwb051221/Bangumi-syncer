@@ -357,9 +357,9 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); }
 .modal-foot { border-bottom: 0; border-top: 1px solid var(--line); justify-content: flex-end; }
 .modal-head strong { font-size: .98rem; }
 .crop-body { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1.6fr) minmax(15rem, 1fr); padding: 1rem; align-items: start; }
-.crop-left { display: flex; flex-direction: column; gap: .55rem; min-width: 0; }
+.crop-left { display: flex; flex-direction: column; gap: .55rem; min-width: 0; width: 100%; }
 .crop-stage {
-  display: grid; place-items: center; align-self: start;
+  display: grid; place-items: center; width: 100%;
   background: var(--code-bg); border: 1px solid var(--line); border-radius: .6rem; overflow: hidden;
 }
 #crop-canvas { box-shadow: 0 0 0 1px var(--line) inset; }
