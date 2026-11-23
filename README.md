@@ -79,8 +79,9 @@ copy prepared elsewhere).
 
 ```bash
 docker build -t bangumi-syncer .
-# registry mirror (e.g. behind the GFW):
+# registry mirror (e.g. behind the GFW), either way:
 docker build --build-arg BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim -t bangumi-syncer .
+echo 'BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim' > .env   # for docker compose
 ```
 
 ## Multi-user

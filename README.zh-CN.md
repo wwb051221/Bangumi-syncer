@@ -60,6 +60,8 @@
 git clone https://github.com/wwb051221/Bangumi-syncer.git
 cd Bangumi-syncer
 cp config.example.toml config.toml
+# 国内网络（镜像源）：可选，compose 会读取同目录 .env
+# echo 'BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim' > .env
 ```
 
 **1. 建一个 Bangumi 应用**：<https://bgm.tv/dev/apps> → 新建，回调地址填
