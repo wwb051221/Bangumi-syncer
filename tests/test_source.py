@@ -115,6 +115,49 @@ def test_schema_drift_raises_clear_error(tmp_path):
     assert "item.title" in message
 
 
+def test_live_mode_snapshots_the_source(tmp_path, fnos_db):
+    snapshot = tmp_path / "origin.db"
+    source = FnosSource(SourceConfig(
+        mode="live", db_path=fnos_db, snapshot_path=str(snapshot),
+        include_paths=["/vol1/1000/\u5f71\u7247/\u52a8\u6f2b"],
+    ))
+    source.prepare()
+    assert snapshot.is_file()
+    data = source.snapshot()
+    assert len(data.series) == 2
+    assert source.describe()["stats"]["snapshot_size"] > 0
+
+
+def test_empty_source_keeps_the_previous_snapshot(tmp_path, fnos_db):
+    """fnOS rewrites its DB in place; an empty copy must not destroy a good snapshot."""
+    import shutil
+
+    source_db = tmp_path / "src.db"
+    sqlite3.connect(str(source_db)).close()  # valid SQLite file, no tables
+    snapshot = tmp_path / "origin.db"
+    shutil.copyfile(fnos_db, snapshot)
+    before = snapshot.read_bytes()
+
+    source = FnosSource(SourceConfig(
+        mode="live", db_path=str(source_db), snapshot_path=str(snapshot),
+        include_paths=["/vol1/1000/\u5f71\u7247/\u52a8\u6f2b"],
+    ))
+    source.prepare()  # must fall back, not raise
+    assert snapshot.read_bytes() == before
+    assert len(source.snapshot().series) == 2
+
+
+def test_empty_source_without_previous_snapshot_raises(tmp_path):
+    source_db = tmp_path / "src.db"
+    sqlite3.connect(str(source_db)).close()
+    source = FnosSource(SourceConfig(
+        mode="live", db_path=str(source_db), snapshot_path=str(tmp_path / "origin.db"),
+    ))
+    with pytest.raises(SourceError) as excinfo:
+        source.prepare()
+    assert "rewriting" in str(excinfo.value)
+
+
 @pytest.mark.parametrize(
     "path,includes,excludes,expected",
     [

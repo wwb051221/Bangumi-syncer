@@ -186,6 +186,10 @@ class FnosSource(SourceAdapter):
                 conn.execute("VACUUM INTO ?", (tmp,))
                 conn.close()
                 conn = None
+                if not self._snapshot_is_usable(tmp):
+                    # fnOS sometimes rewrites the database in place; a copy taken
+                    # during that window is a valid but *empty* SQLite file.
+                    raise sqlite3.DatabaseError("snapshot has no usable tables")
                 os.replace(tmp, dst)
                 break
             except sqlite3.Error as exc:  # pragma: no cover - depends on server state
@@ -199,10 +203,25 @@ class FnosSource(SourceAdapter):
                     os.remove(tmp)
                 except OSError:
                     pass
-        else:  # pragma: no cover - both strategies failed
+
+        if not self._snapshot_is_usable(dst):
+            if os.path.isfile(dst):
+                try:
+                    os.remove(dst)
+                except OSError:
+                    pass
             raise SourceError(
-                "could not snapshot %s read-only (%s). Check the bind mount and that the fnOS app is running."
-                % (src, "; ".join(errors))
+                "could not snapshot %s read-only (%s). The fnOS app may be rewriting its database; "
+                "this is retried automatically on the next cycle."
+                % (src, "; ".join(errors) or "empty snapshot")
+            )
+
+        if errors:
+            # A copy was rejected (usually an empty DB while fnOS rewrites it),
+            # but a previous good snapshot exists: keep serving that one.
+            log.warning(
+                "fnOS database looked empty while snapshotting (%s); keeping the previous snapshot %s",
+                "; ".join(errors), dst,
             )
 
         try:
@@ -217,6 +236,25 @@ class FnosSource(SourceAdapter):
         self._stats["snapshot_size"] = os.path.getsize(dst)
         log.debug("snapshot refreshed: %s (%d bytes)", dst, self._stats["snapshot_size"])
         return dst
+
+    def _snapshot_is_usable(self, path: str) -> bool:
+        try:
+            if not os.path.isfile(path) or os.path.getsize(path) < 4096:
+                return False
+            conn = _connect_readonly(path)
+        except sqlite3.Error:
+            return False
+        try:
+            tables = {row[0] for row in conn.execute(
+                "select name from sqlite_master where type='table'").fetchall()}
+        except sqlite3.Error:
+            return False
+        finally:
+            conn.close()
+        if self.cfg.fnos.episodes_query and self.cfg.fnos.plays_query and self.cfg.fnos.users_query:
+            return bool(tables)
+        return set(REQUIRED_COLUMNS).issubset(tables)
+
 
     def _check_schema(self) -> None:
         if self.cfg.fnos.episodes_query and self.cfg.fnos.plays_query and self.cfg.fnos.users_query:
