@@ -223,10 +223,11 @@ th, td {
 th {
   background: var(--panel-2); color: var(--muted); font-weight: 600;
   font-size: .76rem; text-transform: uppercase; letter-spacing: .04em;
+  white-space: nowrap;
 }
 tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--hover); }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .table-wrap { overflow-x: auto; border-radius: var(--radius); }
 .empty { color: var(--muted); font-style: italic; padding: 1rem 0; }
 
