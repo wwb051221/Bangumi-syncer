@@ -84,7 +84,7 @@ min_interval_seconds = 1.0
 name = "main"
 client_id = "${BGM_CLIENT_ID}"
 client_secret = "${BGM_CLIENT_SECRET}"
-# 必须与 https://bgm.tv/dev/apps 里登记的回调地址完全一致
+# 必须与 https://bgm.tv/dev/app 里登记的回调地址完全一致
 redirect_uri = "http://127.0.0.1:8765/oauth/callback"
 
 # ---------------------------------------------------------------------------

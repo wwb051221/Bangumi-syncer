@@ -723,8 +723,9 @@ function viewOAuth() {
   const remote = current.remote_user
     ? '<span class="muted">Bangumi：' + esc(current.remote_user) + '</span>' : '';
   return '<div class="section" id="oauth-section"><h2>Bangumi 授权</h2><div class="card">' +
-    '<p class="hint" style="margin-top:0">在 <a href="https://bgm.tv/dev/apps" target="_blank" rel="noreferrer">bgm.tv/dev/apps</a> ' +
-    '创建应用后，把 App ID / Secret 填在这里；点「生成授权链接」完成授权，再把回调地址或 code 粘回来即可，' +
+    '<p class="hint" style="margin-top:0">先登录 <a href="https://bgm.tv/login" target="_blank" rel="noreferrer">bgm.tv</a>，' +
+    '再打开 <a href="https://bgm.tv/dev/app" target="_blank" rel="noreferrer">bgm.tv/dev/app</a>（「我的应用」）创建应用；' +
+    '把 App ID / Secret 填在这里，点「生成授权链接」完成授权，再把回调地址或 code 粘回来即可，' +
     '<strong>不需要 SSH 或修改 .env</strong>。</p>' +
     '<div class="form-grid">' +
     '<label class="field">账号' + (names.length ? customSelect('oauth-account', names, currentName) : '<span class="muted">没有账号</span>') + '</label>' +
@@ -988,7 +989,7 @@ function viewSettings() {
   html += '<div class="section"><h2>手动配置指引</h2><div class="card"><details class="guide">' +
     '<summary>展开 .env / CLI 授权步骤（可选，与上面的可视化授权等价）</summary>' +
     '<ol class="steps">' +
-    '<li>打开 <a href="https://bgm.tv/dev/apps" target="_blank" rel="noreferrer">bgm.tv/dev/apps</a>，登录后点「创建新应用」。</li>' +
+    '<li>先登录 <a href="https://bgm.tv/login" target="_blank" rel="noreferrer">bgm.tv</a>，再打开 <a href="https://bgm.tv/dev/app" target="_blank" rel="noreferrer">bgm.tv/dev/app</a>（「我的应用」），点「创建应用」。</li>' +
     '<li>回调地址（Redirect URI）填：<code>http://127.0.0.1:8765/oauth/callback</code>' +
     '<button class="btn small" data-action="copy" data-copy="http://127.0.0.1:8765/oauth/callback">复制</button></li>' +
     '<li>创建后复制 <strong>App ID</strong> 与 <strong>App Secret</strong>，写入与 <code>docker-compose.yml</code> 同目录的 <code>.env</code>：' +

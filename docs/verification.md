@@ -189,7 +189,7 @@ Android Firefox 的原生 `<select>` 弹层由系统绘制，不跟随页面深�
 
 | 项 | 说明 |
 | --- | --- |
-| **真正写入 Bangumi** | 需要用户在 <https://bgm.tv/dev/apps> 自建应用并授权，仓库不含任何令牌；代码路径已由假 tracker + HTTP 替身测试覆盖 |
+| **真正写入 Bangumi** | 需要用户在 <https://bgm.tv/dev/app> 自建应用并授权，仓库不含任何令牌；代码路径已由假 tracker + HTTP 替身测试覆盖 |
 | OAuth 回调 | 本地回调与 `--manual` 两种模式均有实现，但未用真实 client_id 走通（同上） |
 | arm64 镜像 | 本机与 NAS 均为 amd64；CI 的 release 工作流会构建 `linux/amd64,linux/arm64`，未在真机验证 |
 | 飞牛版本差异 | 仅 1.2.1102 实测；schema 探测 + 可覆盖 SQL 用于兜底 |

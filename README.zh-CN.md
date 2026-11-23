@@ -65,8 +65,9 @@ cp config.example.toml config.toml
 # echo 'BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim' > .env
 ```
 
-**1. 建一个 Bangumi 应用**：<https://bgm.tv/dev/apps> → 新建，回调地址填
+**1. 建一个 Bangumi 应用**：先登录 <https://bgm.tv>，打开 <https://bgm.tv/dev/app> → 「创建应用」，回调地址填
 `http://127.0.0.1:8765/oauth/callback`，记下 `App ID` / `App Secret`。
+> 注意：`/dev/apps` 是失效地址（返回空白页，浏览器会黑屏），正确的是 `/dev/app`，且必须先登录。
 
 **2. 填配置**：编辑 `config.toml` 里的
 `[[target.accounts]]`（`client_id` / `client_secret`）和 `[[users]]`（飞牛用户名 → Bangumi 账号）。

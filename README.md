@@ -49,7 +49,7 @@ cd Bangumi-syncer
 cp config.example.toml config.toml
 ```
 
-1. Create a Bangumi application at <https://bgm.tv/dev/apps> with redirect URI
+1. Log in at <https://bgm.tv>, then create an application at <https://bgm.tv/dev/app> with redirect URI
    `http://127.0.0.1:8765/oauth/callback`.
 2. Fill in `[[target.accounts]]` (`client_id`, `client_secret`) and `[[users]]` in `config.toml`.
 3. Authorise (token is stored in `/data/state/state.db`, refreshed automatically):
