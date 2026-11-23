@@ -179,7 +179,11 @@ class FnosSource(SourceAdapter):
                 pass
 
         errors: list[str] = []
-        for immutable in (False, True):
+        fresh = False
+        # fnOS keeps the database in WAL mode. A plain read-only connection
+        # cannot create the -shm file on a read-only mount, so try the
+        # immutable URI first and fall back for older/plain databases.
+        for immutable in (True, False):
             conn: sqlite3.Connection | None = None
             try:
                 conn = _connect_readonly(src, immutable=immutable)
@@ -191,6 +195,7 @@ class FnosSource(SourceAdapter):
                     # during that window is a valid but *empty* SQLite file.
                     raise sqlite3.DatabaseError("snapshot has no usable tables")
                 os.replace(tmp, dst)
+                fresh = True
                 break
             except sqlite3.Error as exc:  # pragma: no cover - depends on server state
                 errors.append("%s%s" % ("immutable: " if immutable else "", exc))
@@ -216,7 +221,7 @@ class FnosSource(SourceAdapter):
                 % (src, "; ".join(errors) or "empty snapshot")
             )
 
-        if errors:
+        if errors and not fresh:
             # A copy was rejected (usually an empty DB while fnOS rewrites it),
             # but a previous good snapshot exists: keep serving that one.
             log.warning(
