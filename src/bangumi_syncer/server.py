@@ -29,6 +29,7 @@ from typing import Any
 from . import __version__, trackers
 from .config import Config
 from .log import get_logger
+from .settings import SettingsError, SettingsManager
 from .state import StateStore
 from .sync import RunResult
 from .util import format_time, human_duration
@@ -147,6 +148,7 @@ class _Handler(BaseHTTPRequestHandler):
     cfg: Config
     store: StateStore
     state: StatusState | None
+    settings: SettingsManager | None
     assets: dict[str, bytes]
     searchers: dict[str, Any]
     search_lock: threading.Lock
@@ -157,6 +159,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         self._dispatch("POST")
+
+    def do_PUT(self) -> None:  # noqa: N802
+        self._dispatch("PUT")
 
     def do_DELETE(self) -> None:  # noqa: N802
         self._dispatch("DELETE")
@@ -203,6 +208,12 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/api/search":
                 self._handle_search(query)
                 return
+            if path == "/api/settings":
+                self._handle_settings_get()
+                return
+            if path == "/api/source-users":
+                self._handle_source_users(query)
+                return
             raise HttpError(404, "not found")
 
         self._require_write_header()
@@ -211,6 +222,12 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if method == "POST" and path == "/api/map":
             self._handle_map_create()
+            return
+        if method == "PUT" and path == "/api/settings":
+            self._handle_settings_update()
+            return
+        if method == "POST" and path == "/api/settings/reset":
+            self._handle_settings_reset()
             return
         if method == "DELETE" and path == "/api/map":
             self._handle_map_delete(query)
@@ -346,6 +363,50 @@ class _Handler(BaseHTTPRequestHandler):
         self.store.delete_candidates(account, series_key)
         self._send_json(200, {"ok": True})
 
+    # -------------------------------------------------------------- settings
+    def _settings_manager(self):
+        if self.settings is None:
+            raise HttpError(503, "settings are not available in this process")
+        return self.settings
+
+    def _settings_payload(self, manager) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "values": manager.values(),
+            "accounts": manager.accounts,
+        }
+        try:
+            payload["source"] = manager.source_users()
+            payload["source_error"] = None
+        except Exception as exc:  # noqa: BLE001 - show the reason in the UI
+            payload["source"] = {"users": [], "seasons": 0, "episodes": 0}
+            payload["source_error"] = str(exc)
+        return payload
+
+    def _handle_settings_get(self) -> None:
+        manager = self._settings_manager()
+        self._send_json(200, self._settings_payload(manager))
+
+    def _handle_source_users(self, query: dict[str, list[str]]) -> None:
+        manager = self._settings_manager()
+        force = (query.get("refresh") or [""])[0] in ("1", "true", "yes")
+        try:
+            self._send_json(200, manager.source_users(force=force))
+        except Exception as exc:  # noqa: BLE001
+            raise HttpError(503, str(exc)) from exc
+
+    def _handle_settings_update(self) -> None:
+        manager = self._settings_manager()
+        body = self._read_json()
+        try:
+            values = manager.update(body)
+        except SettingsError as exc:
+            raise HttpError(400, str(exc)) from exc
+        self._send_json(200, {"ok": True, "values": values, "accounts": manager.accounts})
+
+    def _handle_settings_reset(self) -> None:
+        manager = self._settings_manager()
+        self._send_json(200, {"ok": True, "values": manager.reset(), "accounts": manager.accounts})
+
     # --------------------------------------------------------------- responses
     def _send_json(self, status: int, payload: Any) -> None:
         self._send_bytes(status, "application/json; charset=utf-8", _json_response(payload))
@@ -399,10 +460,17 @@ def _as_int(value: Any) -> int | None:
 
 
 class StatusServer:
-    def __init__(self, cfg: Config, store: StateStore, state: StatusState | None = None) -> None:
+    def __init__(
+        self,
+        cfg: Config,
+        store: StateStore,
+        state: StatusState | None = None,
+        settings: SettingsManager | None = None,
+    ) -> None:
         self.cfg = cfg
         self.store = store
         self.state = state
+        self.settings = settings
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._ring: _RingHandler | None = None
@@ -422,6 +490,7 @@ class StatusServer:
                 "cfg": self.cfg,
                 "store": self.store,
                 "state": self.state,
+                "settings": self.settings,
                 "assets": self._assets,
                 "searchers": {},
                 "search_lock": threading.Lock(),

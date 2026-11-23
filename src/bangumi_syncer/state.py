@@ -143,6 +143,22 @@ class StateStore:
                 (key, value),
             )
 
+    def get_json(self, key: str) -> Any:
+        raw = self.meta(key)
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+
+    def set_json(self, key: str, value: Any) -> None:
+        self.set_meta(key, json.dumps(value, ensure_ascii=False))
+
+    def delete_meta(self, key: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("delete from meta where key=?", (key,))
+
     # -------------------------------------------------------------- accounts
     def tokens(self, account: str) -> Tokens | None:
         with self._lock:

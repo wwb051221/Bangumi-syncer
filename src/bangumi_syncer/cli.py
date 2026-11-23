@@ -25,6 +25,7 @@ from . import __version__, config, oauth, sources, trackers
 from .config import Config, ConfigError
 from .log import get_logger, setup_logging
 from .models import is_watched
+from .settings import SettingsManager
 from .sources import SourceError
 from .state import StateStore
 from .sync import SyncEngine
@@ -114,6 +115,7 @@ def _make_tracker(cfg: Config, store: StateStore, account_name: str):
 # ------------------------------------------------------------------- commands
 def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
     store = StateStore(cfg.app.state_db)
+    settings_manager = SettingsManager(cfg, store)
     source = sources.create(cfg.source)
     engine = SyncEngine(cfg, store, source)
 
@@ -136,7 +138,7 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
 
         status_state = StatusState(started_at=int(time.time()), dry_run=cfg.app.dry_run)
         status_state.source_description = source.describe()
-        status_server = StatusServer(cfg, store, status_state)
+        status_server = StatusServer(cfg, store, status_state, settings=settings_manager)
         try:
             status_server.start()
         except OSError as exc:
@@ -157,7 +159,7 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
                 return EXIT_OK
             return EXIT_AUTH if result.auth_error else EXIT_FAIL
 
-        interval = int(args.interval or cfg.sync.interval_seconds)
+        interval = int(args.interval or settings_manager.interval_seconds)
         log.info("sync loop started (interval %ds, dry_run=%s)", interval, cfg.app.dry_run)
         while not stop.is_set():
             result = engine.run()
@@ -169,6 +171,10 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
                 log.warning("run failed: %s", result.error)
                 if result.auth_error:
                     log.warning("hint: bangumi-syncer oauth --account <name>")
+            # Settings can change while we wait; re-read the interval each cycle.
+            interval = int(args.interval or settings_manager.interval_seconds)
+            if status_state is not None:
+                status_state.next_run_at = int(time.time()) + interval
             # Sleep until the next interval, but wake up early for a manual
             # "sync now" request coming from the web UI.
             deadline = time.time() + interval

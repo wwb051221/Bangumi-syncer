@@ -12,6 +12,7 @@ from conftest import make_config
 
 from bangumi_syncer.config import ServerConfig
 from bangumi_syncer.server import StatusServer, StatusState, build_status
+from bangumi_syncer.settings import SettingsManager
 from bangumi_syncer.state import StateStore
 
 HEADER = {"X-Requested-With": "bangumi-syncer"}
@@ -67,7 +68,8 @@ def server(tmp_path, fnos_db):
                         "year": 2014, "eps": 10, "score": 0.394}],
     })
     state = StatusState(started_at=int(time.time()) - 5, dry_run=True)
-    instance = StatusServer(cfg, store, state)
+    settings = SettingsManager(cfg, store)
+    instance = StatusServer(cfg, store, state, settings=settings)
     instance.start()
     client = Client(instance.address)
     try:
@@ -199,6 +201,57 @@ def test_log_ring_is_exposed(server):
     status, payload = client.get_json("api/logs?limit=50")
     assert status == 200
     assert any("ring-buffer-hello" in line for line in payload["lines"])
+
+
+def test_settings_api_exposes_values_and_source_users(server):
+    client, _instance, _store = server
+    status, payload = client.get_json("api/settings")
+    assert status == 200
+    assert payload["values"]["dry_run"] is True
+    assert payload["accounts"] == ["main"]
+    names = {user["name"] for user in payload["source"]["users"]}
+    assert names == {"alice", "bob"}
+    assert payload["source"]["episodes"] == 76
+    assert payload["source_error"] is None
+
+
+def test_settings_update_requires_header(server):
+    client, _instance, _store = server
+    status, payload = client.send("PUT", "api/settings", {"interval_seconds": 120}, header=False)
+    assert status == 403
+
+    status, payload = client.send("PUT", "api/settings", {
+        "interval_seconds": 120,
+        "dry_run": False,
+        "users": [{"fnos_user": "alice", "account": "main", "enabled": True}],
+    })
+    assert status == 200
+    assert payload["values"]["interval_seconds"] == 120
+    assert payload["values"]["dry_run"] is False
+    assert [user["fnos_user"] for user in payload["values"]["users"]] == ["alice"]
+
+
+def test_settings_update_validation_problem(server):
+    client, _instance, _store = server
+    status, payload = client.send("PUT", "api/settings", {"interval_seconds": 1})
+    assert status == 400
+    assert "interval_seconds" in payload["error"]
+
+
+def test_settings_reset(server):
+    client, _instance, _store = server
+    client.send("PUT", "api/settings", {"interval_seconds": 150})
+    status, payload = client.send("POST", "api/settings/reset")
+    assert status == 200
+    assert payload["values"]["interval_seconds"] == 300
+
+
+def test_source_users_endpoint(server):
+    client, _instance, _store = server
+    status, payload = client.get_json("api/source-users?refresh=1")
+    assert status == 200
+    assert payload["seasons"] == 2
+    assert {user["name"] for user in payload["users"]} == {"alice", "bob"}
 
 
 def test_build_status_without_runtime_state(tmp_path, fnos_db):

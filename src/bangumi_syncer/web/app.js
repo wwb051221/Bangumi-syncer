@@ -2,16 +2,25 @@
 'use strict';
 
 const CSRF = { 'X-Requested-With': 'bangumi-syncer' };
+const PREFS_KEY = 'bs.prefs.v1';
+const DEFAULT_PREFS = { theme: 'auto', accent: '#7db3ff', fontScale: 1, density: 'comfortable' };
+const ACCENTS = ['#7db3ff', '#6ee7a8', '#c792ea', '#ffb86b', '#ff7eb6', '#8be9fd'];
+const TABS = ['overview', 'review', 'mappings', 'accounts', 'logs', 'settings'];
 
 const state = {
   status: null,
   tab: (location.hash || '#overview').slice(1),
-  selected: {},   // series_key -> subject_id (review queue)
-  search: { q: '', results: [], loading: false, error: '', picked: null },
+  selected: {},
+  search: { q: '', results: [], loading: false, error: '' },
+  settings: null,
+  settingsError: '',
+  settingsLoading: false,
+  userRows: [],
+  prefs: loadPrefs(),
+  themeOverride: new URLSearchParams(location.search).get('theme') || '',
   refreshTimer: null,
   logTimer: null,
   runBusy: false,
-  lastLogAt: 0,
 };
 
 /* ------------------------------------------------------------------ utils */
@@ -21,6 +30,7 @@ const esc = (value) =>
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 const num = (value) => (value === null || value === undefined ? 0 : Number(value) || 0);
+const $ = (selector) => document.querySelector(selector);
 
 function fmtDuration(seconds) {
   const total = Math.max(0, Math.round(num(seconds)));
@@ -89,15 +99,86 @@ async function apiSend(method, path, body) {
   return payload;
 }
 
+/* ------------------------------------------------------------- appearance */
+function loadPrefs() {
+  try {
+    return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
+  } catch (err) {
+    return { ...DEFAULT_PREFS };
+  }
+}
+
+function resolvedTheme(pref) {
+  if (pref === 'light' || pref === 'dark') return pref;
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function applyPrefs(persist) {
+  const root = document.documentElement;
+  const pref = state.themeOverride || state.prefs.theme;
+  root.dataset.theme = resolvedTheme(state.themeOverride || state.prefs.theme);
+  root.dataset.themePref = pref;
+  root.dataset.density = state.prefs.density;
+  root.style.setProperty('--accent', state.prefs.accent);
+  root.style.setProperty('--font-scale', String(state.prefs.fontScale));
+  if (persist) {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs)); } catch (err) { /* ignore */ }
+  }
+  syncAppearanceControls();
+  updateLayoutFlag();
+}
+
+function updatePrefs(patch) {
+  state.prefs = { ...state.prefs, ...patch };
+  state.themeOverride = '';  // an explicit choice wins over ?theme=
+  applyPrefs(true);
+}
+
+function syncAppearanceControls() {
+  document.querySelectorAll('[data-role="theme-option"]').forEach((node) => {
+    node.classList.toggle('active', node.dataset.value === (state.themeOverride || state.prefs.theme));
+  });
+  document.querySelectorAll('[data-role="density-option"]').forEach((node) => {
+    node.classList.toggle('active', node.dataset.value === state.prefs.density);
+  });
+  document.querySelectorAll('[data-role="accent-option"]').forEach((node) => {
+    node.classList.toggle('active', node.dataset.value.toLowerCase() === state.prefs.accent.toLowerCase());
+  });
+  const fontInput = document.querySelector('[data-role="font-scale"]');
+  if (fontInput) fontInput.value = String(state.prefs.fontScale);
+  const fontLabel = document.getElementById('font-scale-value');
+  if (fontLabel) fontLabel.textContent = Math.round(state.prefs.fontScale * 100) + '%';
+}
+
+function updateLayoutFlag() {
+  const root = document.documentElement;
+  root.dataset.layout = root.scrollWidth > root.clientWidth + 1 ? 'overflow' : 'ok';
+  root.dataset.viewport = window.innerWidth + 'x' + window.innerHeight;
+}
+
 /* ---------------------------------------------------------------- refresh */
 async function refresh() {
   try {
     state.status = await apiGet('/api/status');
-    render();
+    renderHeader();
+    updateLayoutFlag();
+    // Do not clobber forms / selections that the user is editing.
+    if (state.tab === 'overview' || state.tab === 'accounts') render();
   } catch (err) {
     document.getElementById('app').innerHTML =
       '<div class="card"><h2>无法连接后端</h2><p class="muted">' + esc(err.message) + '</p></div>';
   }
+}
+
+async function handleRefresh() {
+  await refresh();
+  if (state.tab === 'settings') {
+    await loadSettings();
+  } else {
+    render();
+  }
+  if (state.tab === 'logs') refreshLogs();
+  toast('已刷新');
 }
 
 function startPolling() {
@@ -132,8 +213,7 @@ function renderHeader() {
     ? '同步请求已排队'
     : (status.next_run_at ? '下次同步 ' + countdown(status.next_run_at) : '');
   document.getElementById('nextRun').textContent = next;
-  const reviewCount = document.getElementById('reviewCount');
-  reviewCount.textContent = String((status.review || []).length);
+  document.getElementById('reviewCount').textContent = String((status.review || []).length);
   const runBtn = document.getElementById('runBtn');
   runBtn.disabled = state.runBusy || !!status.run_requested;
   runBtn.textContent = status.run_requested ? '同步中…' : '立即同步';
@@ -175,7 +255,7 @@ function viewOverview() {
     '<span>路径过滤 <strong>' + num(sourceStats.episodes_filtered_by_path) + '</strong> 集</span></div>' +
     (source.include_paths && source.include_paths.length
       ? '<div class="sub muted" style="margin-top:.4rem">只同步：' + source.include_paths.map(esc).join('、') + '</div>'
-      : '') +
+      : '<div class="sub muted" style="margin-top:.4rem">未设置目录过滤，会同步所有剧集（建议在「设置」里限定动漫库）</div>') +
     '</div></section>';
 
   if (last) {
@@ -193,8 +273,8 @@ function viewOverview() {
   }
 
   html += '<section class="section"><h2>用户</h2><div class="table-wrap"><table>' +
-    '<thead><tr><th>飞牛用户</th><th>Bangumi 账号</th><th class="num">本轮集数</th>' +
-    '<th class="num">匹配</th><th class="num">推送</th><th class="num">失败</th><th>状态</th></tr></thead><tbody>';
+    '<thead><tr><th>飞牛用户</th><th class="hide-sm">Bangumi 账号</th><th class="num">本轮集数</th>' +
+    '<th class="num">匹配</th><th class="num">推送</th><th class="num hide-sm">失败</th><th>状态</th></tr></thead><tbody>';
   const userResults = {};
   (last && last.users ? last.users : []).forEach((item) => { userResults[item.user] = item; });
   for (const user of status.users || []) {
@@ -202,25 +282,25 @@ function viewOverview() {
     const stateBadge = !user.enabled
       ? badge('已禁用', 'info')
       : (result && result.error ? badge('错误', 'bad') : badge('正常', 'ok'));
-    html += '<tr><td>' + esc(user.fnos_user) + '</td><td>' + esc(user.account) + '</td>' +
+    html += '<tr><td>' + esc(user.fnos_user) + '</td><td class="hide-sm">' + esc(user.account) + '</td>' +
       '<td class="num">' + (result ? num(result.series_seen) : '-') + '</td>' +
       '<td class="num">' + (result ? num(result.matched) : '-') + '</td>' +
       '<td class="num">' + (result ? num(result.pushed) : '-') + '</td>' +
-      '<td class="num">' + (result ? num(result.failed) : '-') + '</td>' +
+      '<td class="num hide-sm">' + (result ? num(result.failed) : '-') + '</td>' +
       '<td>' + stateBadge + '</td></tr>';
   }
   if (!(status.users || []).length) html += '<tr><td colspan="7" class="empty">没有配置用户</td></tr>';
   html += '</tbody></table></div></section>';
 
   html += '<section class="section"><h2>运行历史</h2><div class="table-wrap"><table>' +
-    '<thead><tr><th>开始</th><th>结果</th><th class="num">推送</th><th class="num">失败</th>' +
-    '<th class="num">匹配</th><th class="num">待复核</th><th class="num">耗时</th><th>消息</th></tr></thead><tbody>';
+    '<thead><tr><th>开始</th><th>结果</th><th class="num">推送</th><th class="num hide-sm">失败</th>' +
+    '<th class="num hide-sm">匹配</th><th class="num hide-sm">待复核</th><th class="num hide-sm">耗时</th><th>消息</th></tr></thead><tbody>';
   for (const run of status.runs || []) {
     html += '<tr><td>' + esc(run.started_at_human || '-') + '</td>' +
       '<td>' + (run.ok ? badge('成功', 'ok') : badge('失败', 'bad')) + '</td>' +
-      '<td class="num">' + num(run.pushed) + '</td><td class="num">' + num(run.failed) + '</td>' +
-      '<td class="num">' + num(run.matched) + '</td><td class="num">' + num(run.unmatched) + '</td>' +
-      '<td class="num">' + esc(run.duration || '-') + '</td>' +
+      '<td class="num">' + num(run.pushed) + '</td><td class="num hide-sm">' + num(run.failed) + '</td>' +
+      '<td class="num hide-sm">' + num(run.matched) + '</td><td class="num hide-sm">' + num(run.unmatched) + '</td>' +
+      '<td class="num hide-sm">' + esc(run.duration || '-') + '</td>' +
       '<td class="muted">' + esc(run.message || '') + '</td></tr>';
   }
   if (!(status.runs || []).length) html += '<tr><td colspan="8" class="empty">还没有运行记录</td></tr>';
@@ -282,9 +362,8 @@ function viewReview() {
 
 function viewMappings() {
   const status = state.status;
-  const accounts = (status.config && status.config.target && status.config.target.accounts) || [];
-  const accountOptions = accounts.map((account) =>
-    '<option value="' + esc(account.name) + '">' + esc(account.name) + '</option>').join('');
+  const accountOptions = ((status.config && status.config.target && status.config.target.accounts) || [])
+    .map((account) => '<option value="' + esc(account.name) + '">' + esc(account.name) + '</option>').join('');
   const search = state.search;
 
   let html = '<section class="section"><h2>添加 / 修改映射</h2><div class="card">' +
@@ -318,15 +397,15 @@ function viewMappings() {
 
   html += '<section class="section"><h2>当前映射（' + (status.mappings || []).length + '）</h2>' +
     '<div class="table-wrap"><table><thead><tr><th>账号</th><th>series key</th><th>区间</th>' +
-    '<th>subject</th><th>名称</th><th>来源</th><th class="num">已推送</th><th></th></tr></thead><tbody>';
+    '<th>subject</th><th class="hide-sm">名称</th><th>来源</th><th class="num hide-sm">已推送</th><th></th></tr></thead><tbody>';
   for (const mapping of status.mappings || []) {
     html += '<tr><td>' + esc(mapping.account) + '</td>' +
       '<td class="mono" style="font-size:.78rem">' + esc(mapping.series_key) + '</td>' +
       '<td>' + num(mapping.ep_from) + '–' + num(mapping.ep_to) + '</td>' +
       '<td><a href="https://bgm.tv/subject/' + num(mapping.subject_id) + '" target="_blank" rel="noreferrer">' + num(mapping.subject_id) + '</a></td>' +
-      '<td>' + esc(mapping.subject_name || '') + '</td>' +
+      '<td class="hide-sm">' + esc(mapping.subject_name || '') + '</td>' +
       '<td>' + badge(mapping.strategy + (Number(mapping.confidence) ? ' ' + Number(mapping.confidence).toFixed(2) : ''), mapping.confirmed ? 'ok' : 'info') + '</td>' +
-      '<td class="num">' + num(mapping.pushed) + '</td>' +
+      '<td class="num hide-sm">' + num(mapping.pushed) + '</td>' +
       '<td><button class="btn small danger" data-action="delete-map" data-account="' + esc(mapping.account) +
       '" data-series="' + esc(mapping.series_key) + '" data-from="' + num(mapping.ep_from) + '">删除</button></td></tr>';
   }
@@ -339,18 +418,18 @@ function viewAccounts() {
   const accounts = status.accounts || [];
   let html = '<section class="section"><h2>Bangumi 账号</h2>' +
     '<p class="muted">令牌保存在状态库里，有效期约 7 天，程序会自动刷新。首次使用或授权被撤销后，在容器里执行下面的命令。</p>' +
-    '<div class="table-wrap"><table><thead><tr><th>账号</th><th>令牌</th><th>过期时间</th><th>Bangumi 用户</th><th>授权命令</th></tr></thead><tbody>';
+    '<div class="table-wrap"><table><thead><tr><th>账号</th><th>令牌</th><th class="hide-sm">过期时间</th><th>Bangumi 用户</th><th>授权命令</th></tr></thead><tbody>';
   for (const account of accounts) {
     const command = 'docker compose run --rm bangumi-syncer oauth --account ' + account.name + ' --manual';
     html += '<tr><td>' + esc(account.name) + '</td>' +
       '<td>' + (account.has_token ? badge('已保存', 'ok') : badge('缺失', 'warn')) + '</td>' +
-      '<td>' + esc(fmtTime(account.expires_at, status.timezone)) + '</td>' +
+      '<td class="hide-sm">' + esc(fmtTime(account.expires_at, status.timezone)) + '</td>' +
       '<td>' + esc(account.remote_user || '-') + '</td>' +
       '<td><code style="font-size:.76rem">' + esc(command) + '</code> ' +
       '<button class="btn small" data-action="copy" data-copy="' + esc(command) + '">复制</button></td></tr>';
   }
   if (!accounts.length) {
-    html += '<tr><td colspan="5" class="empty">还没有授权过。先执行 <code>docker compose run --rm bangumi-syncer oauth --account main --manual</code></td></tr>';
+    html += '<tr><td colspan="5" class="empty">还没有授权过，见「设置 → Bangumi API 获取指引」</td></tr>';
   }
   html += '</tbody></table></div></section>';
 
@@ -367,20 +446,247 @@ function viewLogs() {
     '<pre class="logs" id="logPane">' + esc((state.status.logs || []).join('\n')) + '</pre></section>';
 }
 
+/* ---------------------------------------------------------------- settings */
 function viewSettings() {
-  const status = state.status;
-  const config = status.config || {};
-  return '<section class="section"><h2>运行配置（只读）</h2>' +
-    '<p class="muted">修改 <code>config.toml</code> 后重启容器生效。这里的 client_secret 已打码。</p>' +
-    '<pre class="json">' + esc(JSON.stringify(config, null, 2)) + '</pre></section>' +
-    '<section class="section"><h2>命令行</h2><div class="card">' +
-    '<pre class="json">' + esc([
-      'docker compose logs -f',
-      'docker compose run --rm bangumi-syncer status',
-      'docker compose run --rm bangumi-syncer review',
-      'docker compose run --rm bangumi-syncer search -k "关键词"',
-      'docker compose run --rm bangumi-syncer run --once',
-    ].join('\n')) + '</pre></div></section>';
+  if (state.settingsError) {
+    return '<section class="section"><div class="card"><h2>读取设置失败</h2>' +
+      '<p class="muted">' + esc(state.settingsError) + '</p>' +
+      '<button class="btn primary" data-action="refresh">重试</button></div></section>';
+  }
+  if (!state.settings) {
+    return '<section class="section"><div class="card"><div class="empty">读取设置中…</div></div></section>';
+  }
+  const values = state.settings.values || {};
+  const accounts = state.settings.accounts || [];
+  const source = state.settings.source || { users: [] };
+  const sourceError = state.settings.source_error;
+  const prefs = state.prefs;
+
+  const option = (role, value, label, current) =>
+    '<button type="button" data-action="set-pref" data-pref="' + role + '" data-value="' + esc(value) + '"' +
+    ' data-role="' + role + '-option" class="' + (String(current) === String(value) ? 'active' : '') + '">' +
+    esc(label) + '</button>';
+
+  let html = '';
+  html += '<div class="section"><h2>同步设置</h2><div class="card">' +
+    '<div class="form-grid">' +
+    '<label class="check"><input type="checkbox" id="set-dry-run"' + (values.dry_run ? ' checked' : '') + '> 演练模式（不写入 Bangumi）</label>' +
+    '<label class="field">同步间隔（秒）<input type="number" id="set-interval" min="30" max="86400" value="' + esc(values.interval_seconds) + '"></label>' +
+    '<label class="field">看完判定比例<input type="number" id="set-ratio" min="0.05" max="1" step="0.01" value="' + esc(values.watch_ratio) + '"></label>' +
+    '<label class="field">最短进度（秒）<input type="number" id="set-minpos" min="0" max="3600" value="' + esc(values.min_position_seconds) + '"></label>' +
+    '</div><div class="row" style="margin-top:.8rem">' +
+    '<label class="check"><input type="checkbox" id="set-verify"' + (values.verify_remote ? ' checked' : '') + '> 写入前核对远端已有收藏</label>' +
+    '<label class="check"><input type="checkbox" id="set-inprogress"' + (values.mark_in_progress ? ' checked' : '') + '> 有进度时设为「在看」</label>' +
+    '<label class="check"><input type="checkbox" id="set-completed"' + (values.mark_completed ? ' checked' : '') + '> 全部看完设为「看过」</label>' +
+    '</div><p class="hint">改动保存后无需重启，下一轮同步生效。</p></div></div>';
+
+  html += '<div class="section"><h2>匹配</h2><div class="card"><div class="form-grid">' +
+    '<label class="field">最低分（0–1）<input type="number" id="set-minscore" min="0" max="1" step="0.01" value="' + esc(values.match ? values.match.min_score : 0.86) + '"></label>' +
+    '<label class="field">与第二名最小差距<input type="number" id="set-minmargin" min="0" max="1" step="0.01" value="' + esc(values.match ? values.match.min_margin : 0.06) + '"></label>' +
+    '<label class="field">候选数量<input type="number" id="set-searchlimit" min="1" max="20" value="' + esc(values.match ? values.match.search_limit : 8) + '"></label>' +
+    '</div><p class="hint">分数低于阈值或前两名过近时不会自动映射，会进入「待复核」。</p></div></div>';
+
+  html += '<div class="section"><h2>媒体库</h2><div class="card"><div class="form-grid wide">' +
+    '<label class="field">只同步这些目录（每行一个）<textarea id="set-include" placeholder="/vol1/1000/影片/动漫">' + esc((values.include_paths || []).join('\n')) + '</textarea></label>' +
+    '<label class="field">排除目录（每行一个）<textarea id="set-exclude" placeholder="（可选）">' + esc((values.exclude_paths || []).join('\n')) + '</textarea></label>' +
+    '</div><div class="row" style="margin-top:.8rem">' +
+    '<label class="check"><input type="checkbox" id="set-skip0"' + (values.skip_season_zero ? ' checked' : '') + '> 跳过特别篇（Season 0）</label>' +
+    '<label class="field" style="max-width:9rem">每季最少集数<input type="number" id="set-mineps" min="1" max="1000" value="' + esc(values.min_episodes) + '"></label>' +
+    '</div><p class="hint">留空表示不过滤；路径是飞牛宿主机的绝对路径。</p></div></div>';
+
+  html += '<div class="section"><h2>飞牛影视用户</h2><div class="card">' +
+    '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:.5rem">' +
+    '<span class="muted">来自媒体库的账号（季 ' + num(source.seasons) + ' · 集 ' + num(source.episodes) + '）</span>' +
+    '<span class="actions"><button class="btn small" data-action="refresh-users">刷新用户列表</button></span></div>' +
+    (sourceError ? '<p style="color:var(--warn);font-size:.84rem">读取媒体库失败：' + esc(sourceError) + '</p>' : '') +
+    '<div class="table-wrap"><table><thead><tr><th>用户</th><th class="num">播放记录</th><th class="num hide-sm">已看完</th>' +
+    '<th>同步到账号</th><th>单独阈值</th><th></th></tr></thead><tbody>' +
+    (state.userRows.length ? state.userRows.map((row) => {
+      const accountOptions = accounts.map((name) =>
+        '<option value="' + esc(name) + '"' + (name === row.account ? ' selected' : '') + '>' + esc(name) + '</option>').join('');
+      return '<tr data-user="' + esc(row.name) + '">' +
+        '<td><label class="check"><input type="checkbox" data-role="user-enabled"' + (row.enabled ? ' checked' : '') + '> ' + esc(row.name) + '</label>' +
+        (row.missing ? '<div class="hint">媒体库中已不存在</div>' : '') + '</td>' +
+        '<td class="num">' + (row.plays === null ? '-' : num(row.plays)) + '</td>' +
+        '<td class="num hide-sm">' + (row.finished === null ? '-' : num(row.finished)) + '</td>' +
+        '<td><select data-role="user-account">' + accountOptions + '</select></td>' +
+        '<td><input type="number" data-role="user-ratio" min="0.05" max="1" step="0.01" placeholder="继承全局" value="' + (row.watch_ratio == null ? '' : esc(row.watch_ratio)) + '"></td>' +
+        '<td><button class="btn small ghost" data-action="remove-user" data-user="' + esc(row.name) + '">移除</button></td></tr>';
+    }).join('') : '<tr><td colspan="6" class="empty">没有可同步的用户</td></tr>') +
+    '</tbody></table></div>' +
+    '<p class="hint">勾选即参与同步；勾掉不会删除已有映射，只是不再读取该用户的进度。新发现的用户默认不勾选。</p>' +
+    '</div></div>';
+
+  html += '<div class="section"><h2>界面个性与外观</h2><div class="card">' +
+    '<div class="split">' +
+    '<div><label class="field">主题</label><div class="seg" data-role="theme-seg">' +
+    option('theme', 'auto', '跟随系统', prefs.theme) + option('theme', 'light', '浅色', prefs.theme) + option('theme', 'dark', '深色', prefs.theme) +
+    '</div><p class="hint">「跟随系统」会随你的浏览器/系统深色模式自动切换。</p></div>' +
+    '<div><label class="field">主题色</label><div class="swatches">' +
+    ACCENTS.map((color) => '<button type="button" class="swatch' + (prefs.accent.toLowerCase() === color ? ' active' : '') +
+      '" data-action="set-pref" data-pref="accent" data-value="' + color + '" data-role="accent-option" style="background:' + color + '" title="' + color + '"></button>').join('') +
+    '<input type="color" data-role="accent-custom" value="' + esc(prefs.accent) + '" title="自定义颜色" style="width:2rem;height:2rem;padding:0;border-radius:50%">' +
+    '</div><p class="hint">影响链接、按钮、高亮等强调色，只保存在本浏览器。</p></div>' +
+    '<div><label class="field">字号 <span id="font-scale-value" class="muted">' + Math.round(prefs.fontScale * 100) + '%</span></label>' +
+    '<input type="range" data-role="font-scale" min="0.85" max="1.25" step="0.05" value="' + esc(prefs.fontScale) + '"></div>' +
+    '<div><label class="field">密度</label><div class="seg" data-role="density-seg">' +
+    option('density', 'comfortable', '舒适', prefs.density) + option('density', 'compact', '紧凑', prefs.density) + '</div></div>' +
+    '</div><div class="actions" style="margin-top:.8rem">' +
+    '<button class="btn" data-action="reset-prefs">恢复默认外观</button>' +
+    '<span class="muted" style="font-size:.8rem">个性化只影响当前浏览器，不写入配置。</span></div></div></div>';
+
+  html += '<div class="section"><h2>Bangumi API 获取指引</h2><div class="card">' +
+    '<ol class="steps">' +
+    '<li>打开 <a href="https://bgm.tv/dev/apps" target="_blank" rel="noreferrer">bgm.tv/dev/apps</a>，登录后点「创建新应用」。</li>' +
+    '<li>回调地址（Redirect URI）填：<code>http://127.0.0.1:8765/oauth/callback</code>' +
+    '<button class="btn small" data-action="copy" data-copy="http://127.0.0.1:8765/oauth/callback">复制</button></li>' +
+    '<li>创建后复制 <strong>App ID</strong> 与 <strong>App Secret</strong>，写入与 <code>docker-compose.yml</code> 同目录的 <code>.env</code>：' +
+    '<pre class="snippet"><code>BGM_CLIENT_ID=你的AppID\nBGM_CLIENT_SECRET=你的AppSecret</code>' +
+    '<button class="btn small" data-action="copy" data-copy="BGM_CLIENT_ID=\nBGM_CLIENT_SECRET=">复制模板</button></pre></li>' +
+    '<li>让容器读到新环境变量：<pre class="snippet"><code>docker compose up -d</code>' +
+    '<button class="btn small" data-action="copy" data-copy="docker compose up -d">复制</button></pre></li>' +
+    '<li>在 NAS 上执行授权（会打印一个链接，浏览器打开后把 code 粘回来）：' +
+    '<pre class="snippet"><code>docker compose run --rm bangumi-syncer oauth --account main --manual</code>' +
+    '<button class="btn small" data-action="copy" data-copy="docker compose run --rm bangumi-syncer oauth --account main --manual">复制</button></pre></li>' +
+    '<li>刷新本页，「账号」页应显示「已保存」。访问令牌约 7 天有效，程序会用 refresh token 自动续期。</li>' +
+    '</ol><p class="hint">回调地址必须与创建应用时填写的一致；如果应用已存在，可在其设置里修改。' +
+    '不要把 App Secret 提交到公开仓库（<code>.env</code> 已被 <code>.gitignore</code> 忽略）。</p>' +
+    '</div></div>';
+
+  html += '<div class="actions" style="position:sticky;bottom:0;padding:.8rem 0;background:var(--bg)">' +
+    '<button class="btn primary" data-action="save-settings">保存设置</button>' +
+    '<button class="btn" data-action="reset-settings">恢复 config.toml 默认</button>' +
+    '<span class="muted" style="font-size:.8rem">保存后立即生效（下一轮同步）</span></div>';
+  return html;
+}
+
+/* ------------------------------------------------------------- settings io */
+function splitLines(text) {
+  return String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+function buildUserRows() {
+  const values = (state.settings && state.settings.values) || {};
+  const source = (state.settings && state.settings.source) || { users: [] };
+  const accounts = (state.settings && state.settings.accounts) || [];
+  const sourceByName = {};
+  (source.users || []).forEach((user) => { sourceByName[user.name] = user; });
+  const rows = [];
+  const seen = {};
+  for (const user of values.users || []) {
+    const found = sourceByName[user.fnos_user];
+    rows.push({
+      name: user.fnos_user,
+      plays: found ? found.plays : null,
+      finished: found ? found.finished : null,
+      enabled: !!user.enabled,
+      account: user.account,
+      watch_ratio: user.watch_ratio,
+      missing: !found,
+    });
+    seen[user.fnos_user] = true;
+  }
+  for (const user of source.users || []) {
+    if (seen[user.name]) continue;
+    rows.push({
+      name: user.name,
+      plays: user.plays,
+      finished: user.finished,
+      enabled: false,
+      account: accounts[0] || 'main',
+      watch_ratio: null,
+      missing: false,
+    });
+  }
+  state.userRows = rows;
+}
+
+function collectSettings() {
+  const match = {
+    min_score: Number(($('#set-minscore') || {}).value),
+    min_margin: Number(($('#set-minmargin') || {}).value),
+    search_limit: Number(($('#set-searchlimit') || {}).value),
+  };
+  return {
+    dry_run: !!($('#set-dry-run') || {}).checked,
+    interval_seconds: Number(($('#set-interval') || {}).value),
+    watch_ratio: Number(($('#set-ratio') || {}).value),
+    min_position_seconds: Number(($('#set-minpos') || {}).value),
+    verify_remote: !!($('#set-verify') || {}).checked,
+    mark_in_progress: !!($('#set-inprogress') || {}).checked,
+    mark_completed: !!($('#set-completed') || {}).checked,
+    include_paths: splitLines(($('#set-include') || {}).value),
+    exclude_paths: splitLines(($('#set-exclude') || {}).value),
+    skip_season_zero: !!($('#set-skip0') || {}).checked,
+    min_episodes: Number(($('#set-mineps') || {}).value),
+    match,
+    users: state.userRows.map((row) => ({
+      fnos_user: row.name,
+      account: row.account,
+      enabled: !!row.enabled,
+      watch_ratio: row.watch_ratio === '' || row.watch_ratio === null || row.watch_ratio === undefined
+        ? null : Number(row.watch_ratio),
+    })),
+  };
+}
+
+async function loadSettings() {
+  state.settingsLoading = true;
+  state.settingsError = '';
+  if (state.tab === 'settings') render();
+  try {
+    state.settings = await apiGet('/api/settings');
+    buildUserRows();
+  } catch (err) {
+    state.settingsError = err.message;
+  } finally {
+    state.settingsLoading = false;
+    if (state.tab === 'settings') render();
+  }
+}
+
+async function saveSettings(button) {
+  button.disabled = true;
+  try {
+    const data = await apiSend('PUT', '/api/settings', collectSettings());
+    state.settings = { ...state.settings, values: data.values, accounts: data.accounts };
+    buildUserRows();
+    toast('设置已保存，下一轮同步生效', 'ok');
+    render();
+    refresh();
+  } catch (err) {
+    toast('保存失败：' + err.message, 'err');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function resetSettings() {
+  if (!confirm('恢复为 config.toml 里的值？运行时的修改会被清除。')) return;
+  try {
+    const data = await apiSend('POST', '/api/settings/reset');
+    state.settings = { ...state.settings, values: data.values, accounts: data.accounts };
+    buildUserRows();
+    toast('已恢复 config.toml 默认值');
+    render();
+    refresh();
+  } catch (err) {
+    toast('恢复失败：' + err.message, 'err');
+  }
+}
+
+async function refreshUsers() {
+  try {
+    const source = await apiGet('/api/source-users?refresh=1');
+    state.settings = { ...state.settings, source, source_error: null };
+    buildUserRows();
+    toast('用户列表已刷新');
+    render();
+  } catch (err) {
+    state.settings = { ...state.settings, source_error: err.message };
+    toast('刷新失败：' + err.message, 'err');
+    render();
+  }
 }
 
 /* ----------------------------------------------------------------- render */
@@ -395,14 +701,16 @@ function render() {
     logs: viewLogs,
     settings: viewSettings,
   };
-  const view = views[state.tab] || viewOverview;
-  document.getElementById('app').innerHTML = view();
+  document.getElementById('app').innerHTML = (views[state.tab] || viewOverview)();
+  updateLayoutFlag();
+  syncAppearanceControls();
   if (state.tab === 'logs') refreshLogs();
 }
 
 function setTab(tab) {
-  state.tab = tab;
+  state.tab = TABS.includes(tab) ? tab : 'overview';
   if (location.hash !== '#' + tab) history.replaceState(null, '', '#' + tab);
+  if (state.tab === 'settings' && !state.settings && !state.settingsLoading) loadSettings();
   render();
 }
 
@@ -415,6 +723,11 @@ document.addEventListener('click', async (event) => {
   if (action === 'tab') {
     event.preventDefault();
     setTab(target.dataset.tab);
+    return;
+  }
+
+  if (action === 'refresh') {
+    await handleRefresh();
     return;
   }
 
@@ -444,6 +757,45 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (action === 'set-pref') {
+    const patch = {};
+    const value = target.dataset.value;
+    patch[target.dataset.pref] = target.dataset.pref === 'fontScale' ? Number(value) : value;
+    updatePrefs(patch);
+    return;
+  }
+
+  if (action === 'reset-prefs') {
+    state.prefs = { ...DEFAULT_PREFS };
+    state.themeOverride = '';
+    applyPrefs(true);
+    toast('已恢复默认外观');
+    return;
+  }
+
+  if (action === 'save-settings') {
+    await saveSettings(target);
+    return;
+  }
+
+  if (action === 'reset-settings') {
+    await resetSettings();
+    return;
+  }
+
+  if (action === 'refresh-users') {
+    await refreshUsers();
+    return;
+  }
+
+  if (action === 'remove-user') {
+    const name = target.dataset.user;
+    state.userRows = state.userRows.filter((row) => row.name !== name);
+    render();
+    toast('已从同步列表移除，保存后生效');
+    return;
+  }
+
   if (action === 'confirm-map') {
     const card = target.closest('.review-card');
     const seriesKey = target.dataset.series;
@@ -463,12 +815,12 @@ document.addEventListener('click', async (event) => {
     target.disabled = true;
     try {
       await apiSend('POST', '/api/map', {
-        account, series_key: seriesKey, subject_id: Number(subject),
-        ep_from: from, ep_to: to,
+        account, series_key: seriesKey, subject_id: Number(subject), ep_from: from, ep_to: to,
       });
       toast('映射已保存，下一轮同步生效', 'ok');
       delete state.selected[seriesKey];
       await refresh();
+      render();
     } catch (err) {
       toast('保存失败：' + err.message, 'err');
     } finally {
@@ -486,6 +838,7 @@ document.addEventListener('click', async (event) => {
         '&series_key=' + encodeURIComponent(seriesKey));
       toast('已移除候选');
       await refresh();
+      render();
     } catch (err) {
       toast('移除失败：' + err.message, 'err');
     }
@@ -502,6 +855,7 @@ document.addEventListener('click', async (event) => {
         '&series_key=' + encodeURIComponent(seriesKey) + '&ep_from=' + encodeURIComponent(from));
       toast('映射已删除');
       await refresh();
+      render();
     } catch (err) {
       toast('删除失败：' + err.message, 'err');
     }
@@ -514,7 +868,6 @@ document.addEventListener('click', async (event) => {
     if (subjectInput) subjectInput.value = target.dataset.subject;
     if (nameInput) nameInput.value = target.dataset.name || '';
     toast('已填入 subject ' + target.dataset.subject);
-    return;
   }
 });
 
@@ -525,6 +878,32 @@ document.addEventListener('change', (event) => {
     document.querySelectorAll('.candidate').forEach((node) => node.classList.remove('selected'));
     const label = target.closest('.candidate');
     if (label) label.classList.add('selected');
+    return;
+  }
+
+  const row = target.closest('tr[data-user]');
+  if (row) {
+    const name = row.dataset.user;
+    const entry = state.userRows.find((item) => item.name === name);
+    if (!entry) return;
+    if (target.dataset.role === 'user-enabled') entry.enabled = target.checked;
+    if (target.dataset.role === 'user-account') entry.account = target.value;
+    if (target.dataset.role === 'user-ratio') {
+      const raw = target.value.trim();
+      entry.watch_ratio = raw === '' ? null : Number(raw);
+    }
+    return;
+  }
+
+  if (target.dataset && target.dataset.role === 'accent-custom') {
+    updatePrefs({ accent: target.value });
+  }
+});
+
+document.addEventListener('input', (event) => {
+  const target = event.target;
+  if (target.dataset && target.dataset.role === 'font-scale') {
+    updatePrefs({ fontScale: Number(target.value) });
   }
 });
 
@@ -546,6 +925,7 @@ document.addEventListener('submit', async (event) => {
       document.getElementById('mapSubject').value = '';
       document.getElementById('mapName').value = '';
       await refresh();
+      render();
     } catch (err) {
       toast('保存失败：' + err.message, 'err');
     }
@@ -556,13 +936,13 @@ document.addEventListener('submit', async (event) => {
     event.preventDefault();
     const query = document.getElementById('searchQ').value.trim();
     if (!query) return;
-    state.search = { q: query, results: [], loading: true, error: '', picked: null };
+    state.search = { q: query, results: [], loading: true, error: '' };
     render();
     try {
       const data = await apiGet('/api/search?q=' + encodeURIComponent(query));
-      state.search = { q: query, results: data.results || [], loading: false, error: '', picked: null };
+      state.search = { q: query, results: data.results || [], loading: false, error: '' };
     } catch (err) {
-      state.search = { q: query, results: [], loading: false, error: err.message, picked: null };
+      state.search = { q: query, results: [], loading: false, error: err.message };
     }
     render();
   }
@@ -573,11 +953,23 @@ window.addEventListener('hashchange', () => {
   if (tab !== state.tab) setTab(tab);
 });
 
+window.addEventListener('resize', updateLayoutFlag);
+
+if (window.matchMedia) {
+  const media = window.matchMedia('(prefers-color-scheme: light)');
+  const onChange = () => {
+    if (!state.themeOverride && state.prefs.theme === 'auto') applyPrefs(false);
+  };
+  if (media.addEventListener) media.addEventListener('change', onChange);
+  else if (media.addListener) media.addListener(onChange);
+}
+
 /* ------------------------------------------------------------------- boot */
 (async function boot() {
-  if (!['overview', 'review', 'mappings', 'accounts', 'logs', 'settings'].includes(state.tab)) {
-    state.tab = 'overview';
-  }
+  if (!TABS.includes(state.tab)) state.tab = 'overview';
+  applyPrefs(false);
   await refresh();
+  if (state.tab === 'settings') await loadSettings();
+  render();
   startPolling();
 })();

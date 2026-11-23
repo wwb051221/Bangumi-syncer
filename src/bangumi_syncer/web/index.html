@@ -6,6 +6,25 @@
   <meta name="color-scheme" content="dark light">
   <title>Bangumi-syncer</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237db3ff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%230f1115' font-family='sans-serif'%3EB%3C/text%3E%3C/svg%3E">
+  <script>
+    /* Apply theme / personalisation before first paint to avoid a flash. */
+    (function () {
+      try {
+        var prefs = JSON.parse(localStorage.getItem('bs.prefs.v1') || '{}');
+        var query = new URLSearchParams(location.search).get('theme');
+        var pref = query || prefs.theme || 'auto';
+        var resolved = pref === 'auto'
+          ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+          : pref;
+        var root = document.documentElement;
+        root.dataset.theme = resolved;
+        root.dataset.themePref = pref;
+        root.dataset.density = prefs.density || 'comfortable';
+        if (prefs.accent) root.style.setProperty('--accent', prefs.accent);
+        if (prefs.fontScale) root.style.setProperty('--font-scale', prefs.fontScale);
+      } catch (err) { /* localStorage may be disabled */ }
+    })();
+  </script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -19,6 +38,7 @@
     <div class="meta">
       <span id="uptime" class="muted"></span>
       <span id="nextRun" class="muted"></span>
+      <button class="btn" data-action="refresh" title="刷新数据">刷新</button>
       <button id="runBtn" class="btn primary" data-action="run">立即同步</button>
     </div>
   </header>
@@ -38,7 +58,7 @@
 
   <footer class="footer muted">
     <span id="footerInfo"></span>
-    <span>·· <a href="/api/status" target="_blank" rel="noreferrer">API</a> · <a href="/healthz" target="_blank" rel="noreferrer">health</a></span>
+    <span class="hide-sm">·· <a href="/api/status" target="_blank" rel="noreferrer">API</a> · <a href="/healthz" target="_blank" rel="noreferrer">health</a></span>
   </footer>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
