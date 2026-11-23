@@ -96,7 +96,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-状态页：<http://飞牛IP:8099/>（只读，展示最近运行、映射表、待复核条目）。
+状态页：<http://飞牛IP:8099/>。首次打开会引导创建管理员账号，之后需要登录；成员可以在设置里添加。
 
 > 没有 Docker？也可以直接跑：
 > `pip install .` → `bangumi-syncer --config config.toml run`
@@ -113,7 +113,7 @@ docker compose logs -f
 | **映射** | 新增/覆盖映射、按关键词搜索 Bangumi 条目并回填、删除映射（同时清该区间推送记录） |
 | **账号** | 令牌状态与过期时间、复制授权命令 |
 | **日志** | 最近 400 行实时日志（2 秒刷新） |
-| **设置** | **在线修改同步/匹配/目录/用户**（存状态库、立即生效）、**媒体库目录可视化勾选**、**飞牛用户勾选**、**可视化 Bangumi 授权**、**服务端保存的外观与背景**、**Bangumi API 指引** |
+| **设置** | **在线修改同步/匹配/目录/用户**（存状态库、立即生效）、**媒体库目录可视化勾选**、**飞牛用户勾选**、**可视化 Bangumi 授权**、**多用户登录与密码**、**服务端保存的外观与背景**、**Bangumi API 指引** |
 
 设置页里的修改会作为「运行时覆盖」存进状态库，**不需要重启容器**；点「恢复 config.toml 默认」可撤销。
 **媒体库目录**直接读取飞牛影视里的真实文件夹树：勾选父目录即包含其下所有剧集，支持排除目录、
@@ -130,7 +130,8 @@ docker compose logs -f
 
 右上角「立即同步」会让常驻循环立刻跑一轮（最多等 0.5 秒），适合刚看完一集时手动触发。
 
-> 页面**没有登录鉴权**，请只在局域网暴露（或把 `server.listen` 改成 `127.0.0.1:8099` 后用 SSH 隧道）。
+> **首次访问**会要求创建管理员账号；之后页面与 API 都需要登录。密码使用 PBKDF2 哈希保存在状态库，
+> 会话是 7 天有效的签名 Cookie。管理员可在「设置 → 登录与用户」添加成员、重置密码；成员也能修改自己的密码。
 > 写操作要求自定义请求头 `X-Requested-With`，跨站表单无法直接调用；接口清单见 [docs/api.md](docs/api.md)。
 
 ### 界面预览
@@ -164,6 +165,14 @@ docker compose logs -f
 设置页内直接完成 Bangumi 授权（App ID / Secret / 授权链接 / 回调 code）：
 
 ![可视化 Bangumi 授权](docs/screenshots/settings-oauth-dark.png)
+
+首次配置与登录（密码 PBKDF2、会话签名 Cookie；管理员可添加成员）：
+
+| 首次使用 | 登录 |
+| --- | --- |
+| ![首次配置](docs/screenshots/first-run-setup.png) | ![登录](docs/screenshots/login-dark.png) |
+
+![登录与用户](docs/screenshots/settings-users-dark.png)
 
 主题支持「跟随系统 / 浅色 / 深色」，另有 6 种主题色 + 自定义取色、85%–125% 字号、舒适/紧凑密度。
 **外观与背景保存在服务器**，多设备共享；背景可上传、填 URL 或使用 4 个内置渐变预设，
@@ -362,7 +371,7 @@ docker build --build-arg BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim \
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-python -m pytest            # 165 个用例，全部离线（含模拟 fnOS 库）
+python -m pytest            # 176 个用例，全部离线（含模拟 fnOS 库）
 ruff check src tests
 ```
 
@@ -379,7 +388,7 @@ src/bangumi_syncer/
   state.py         SQLite 状态（令牌/映射/推送/候选/运行）
   server.py        只读状态页 + JSON
   cli.py           命令行
-tests/             165 个离线用例（真实 schema 的模拟库 + 假 tracker）
+tests/             176 个离线用例（真实 schema 的模拟库 + 假 tracker）
 docs/              架构、匹配算法、飞牛库结构
 ```
 

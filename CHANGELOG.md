@@ -7,6 +7,12 @@
 
 ### 新增
 
+- **多用户登录与首次配置页**：首次启动时引导创建管理员账号；之后页面与 API 都需要登录。
+  密码使用 PBKDF2（20 万次）哈希存入状态库，会话为 7 天有效的签名 Cookie（HttpOnly/SameSite）。
+  管理员可在「设置 → 登录与用户」添加成员、重置密码、调整角色或删除用户（保护最后一个管理员
+  与当前账号）；每位用户可修改自己的密码。新增 `auth.py`、`GET /api/auth`、`POST /api/auth/*`、
+  `GET/POST/DELETE /api/users` 等接口，未登录时仅放行登录页资源、背景图与 `/healthz`。
+  **升级提示**：升级后首次访问需要创建管理员账号。
 - **可视化 Bangumi 授权**：设置页直接填写 App ID / App Secret / 回调地址，点「生成授权链接」在浏览器
   完成授权，再把回调地址或 `code` 粘回来即可；凭据保存在状态库（按账号），启动时覆盖到运行时配置，
   重启后仍有效。新增 `GET/PUT /api/oauth`、`POST /api/oauth/start`、`POST /api/oauth/exchange`，
@@ -61,7 +67,7 @@
 
 ### 测试
 
-- 新增外观相关用例（预置/夹取/背景魔数/落盘/URL 校验/配色接口），测试总数 165。
+- 新增外观相关用例（预置/夹取/背景魔数/落盘/URL 校验/配色接口），测试总数 176。
 - 新增 17 个用例：CLI 端到端（`dump`/`status`/`map`/`review`/`run --once` 与退出码）、
   Bangumi tracker 请求构造（类型过滤、分页、收藏 POST/PATCH、章节标记、404）、
   `accept_types` 透传。共 103 个离线用例。

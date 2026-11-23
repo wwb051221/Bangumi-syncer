@@ -521,7 +521,8 @@ body[data-mode="login"] .meta button,
 body[data-mode="login"] #modeBadge,
 body[data-mode="login"] #uptime,
 body[data-mode="login"] #nextRun,
-body[data-mode="login"] #userBox { display: none; }
+body[data-mode="login"] #userBox,
+body[data-mode="login"] .footer { display: none; }
 .login-wrap { min-height: calc(100vh - 12rem); display: grid; place-items: center; padding: 1rem; }
 .login-card { width: min(390px, 100%); }
 .login-brand { display: flex; align-items: center; gap: .6rem; margin-bottom: .9rem; }

@@ -151,8 +151,10 @@ Open `http://<nas>:8099/` after the container starts:
 
 The **Sync now** button in the header wakes the loop immediately (≤0.5 s).
 
-The page has no login: keep it on the LAN (or bind `server.listen` to `127.0.0.1` and use an SSH
-tunnel). Write endpoints require the `X-Requested-With` header, so a cross-site form cannot call
+The first visit asks you to create an administrator account; every page and API requires login
+afterwards. Passwords are PBKDF2 hashes in the state database and sessions are signed cookies valid
+for 7 days. Admins can add members and reset passwords under **Settings → 登录与用户**; every user
+can change their own password. Write endpoints require the `X-Requested-With` header, so a cross-site form cannot call
 them. See [docs/api.md](docs/api.md). The SPA is plain JavaScript with **no build step**.
 
 ### Screenshots
@@ -198,7 +200,7 @@ Exit codes: `0` ok, `1` run failed, `2` config error, `3` re-authorisation neede
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest        # 165 offline tests (synthetic fnOS DB + fake tracker)
+python -m pytest        # 176 offline tests (synthetic fnOS DB + fake tracker)
 ruff check src tests
 ```
 

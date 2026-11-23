@@ -115,6 +115,55 @@ Bangumi 侧失败时返回 `502`。
 200 {"ok": true}
 ```
 
+## 登录与用户接口
+
+首次启动（状态库中没有用户）时，除登录页静态资源外所有 API 返回 `401 {"error":"setup required"}`，
+只能调用 `POST /api/auth/setup`。初始化完成后，未登录请求返回 `401 {"error":"unauthorized"}`，
+登录后使用 `bs_session` Cookie（HttpOnly、SameSite=Lax、7 天有效）。所有写请求仍需
+`X-Requested-With: bangumi-syncer`。
+
+### `GET /api/auth`
+
+```json
+{"setup_required": false, "authenticated": true, "username": "owner", "role": "admin"}
+```
+
+### `POST /api/auth/setup`
+
+仅在没有用户时可用，创建第一个管理员并直接登录：
+
+```json
+{"username": "owner", "password": "secret123", "confirm": "secret123"}
+```
+
+### `POST /api/auth/login` / `POST /api/auth/logout`
+
+```json
+{"username": "owner", "password": "secret123"}
+→ 200 {"ok": true, "auth": {...}} + Set-Cookie: bs_session=...
+```
+
+失败返回 `401`。登出清空 Cookie。
+
+### `POST /api/auth/password`
+
+修改当前登录用户的密码：
+
+```json
+{"current_password": "…", "new_password": "…", "confirm": "…"}
+```
+
+### 用户管理（仅管理员）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/users` | `{"users": [{"username","role","created_at"}]}` |
+| POST | `/api/users` | `{"username","password","role":"member\|admin"}` |
+| POST | `/api/users/reset` | `{"username","password"}`，也可带 `role` 改角色 |
+| DELETE | `/api/users?name=kid` | 删除用户（不能删除自己或最后一个管理员） |
+
+非管理员访问 `/api/users*` 返回 `403`；删除用户后其现有 Cookie 立即失效。
+
 ## 设置接口
 
 运行时设置保存在状态库（`meta.runtime_settings`），修改后**下一轮同步生效**，无需重启容器。
