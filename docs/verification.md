@@ -38,7 +38,21 @@
 | 合并季 | 正确提示 `local episode 29 maps to #29 ... need split mapping` |
 | 收藏状态 | dry-run 下记录 `would set collection: watching`，未写远端 |
 
-## 4. 未验证 / 已知限制
+## 4. Web 界面（容器内验证）
+
+| 项 | 结果 |
+| --- | --- |
+| SPA 首页 | ✅ `GET /` 200，含应用壳（`id="app"`）、引用 `/static/app.js` 与 `/static/style.css` |
+| 静态资源 | ✅ `app.js` 27.6 KB、`style.css` 8.0 KB（`Cache-Control: max-age=300`） |
+| `/api/status` | ✅ 返回 `version/dry_run/run_requested/source/stats/users/accounts/runs/mappings/review/logs/config` |
+| CSRF | ✅ 无 `X-Requested-With` 的 `POST /api/run` → **403**；带头 → **202** |
+| 「立即同步」 | ✅ 0.5 秒内被循环拾取，日志出现 `manual sync request picked up` |
+| 映射写入 | ✅ `POST /api/map` 创建成功，`/api/status` 立即可见；`DELETE /api/map` 删除成功 |
+| 条目搜索 | ✅ 容器内真实调用 Bangumi：`药屋少女的呢喃` → 420628 / 486347 |
+| 未知路由 | ✅ 404 JSON |
+| 打包 | ✅ `pip install .` 后 `importlib.resources` 能找到 3 个前端资源 |
+
+## 5. 未验证 / 已知限制
 
 | 项 | 说明 |
 | --- | --- |
@@ -48,7 +62,7 @@
 | 飞牛版本差异 | 仅 1.2.1102 实测；schema 探测 + 可覆盖 SQL 用于兜底 |
 | Windows 容器 | 不支持（镜像基于 Linux） |
 
-## 5. 复现步骤
+## 6. 复现步骤
 
 ```bash
 # 本机：离线测试

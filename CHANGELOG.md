@@ -38,6 +38,7 @@
 
 - 在 fnOS 1.2.1102 实机用 `docker compose build/run` 验证：live 模式快照真实库（13 季 / 296 集）、
   状态页健康检查、容器内直连 Bangumi 匹配（药屋→420628、魔卡→1940）。
+- Web 界面在容器内验证：SPA/静态资源、CSRF 拦截、立即同步被拾取、映射增删、条目搜索。
   过程与结论见 [docs/verification.md](docs/verification.md)。
 
 ## [0.1.0] - 2026-11-23
