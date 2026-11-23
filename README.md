@@ -9,7 +9,8 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
 中文文档：[README.zh-CN.md](README.zh-CN.md) · Design notes: [architecture](docs/architecture.md) ·
-[matching](docs/mapping.md) · [fnOS schema](docs/schema.md) · [verification log](docs/verification.md)
+[matching](docs/mapping.md) · [fnOS schema](docs/schema.md) · [HTTP API](docs/api.md) ·
+[verification log](docs/verification.md)
 
 ## How it works
 
@@ -124,6 +125,24 @@ Matching is conservative on purpose: title similarity + year + episode count + s
 and a subject is only auto-mapped when it beats the runner-up by `match.min_margin`. Everything
 else waits for a human — a wrong mapping writes wrong history, a missing one just waits.
 
+## Web UI
+
+Open `http://<nas>:8099/` after the container starts:
+
+- **Overview** — uptime, source statistics, per-user results of the last run, run history.
+- **Review** — shows without a confident match; pick a candidate, set an episode range
+  (for merged seasons) and save the mapping right there.
+- **Mappings** — create/override/delete mappings, search Bangumi by keyword, see push counters.
+- **Accounts** — token state and expiry, copy-paste authorisation command.
+- **Logs** — last 400 log lines, refreshed every 2 s.
+- **Settings** — redacted runtime config and common commands.
+
+The **Sync now** button in the header wakes the loop immediately (≤0.5 s).
+
+The page has no login: keep it on the LAN (or bind `server.listen` to `127.0.0.1` and use an SSH
+tunnel). Write endpoints require the `X-Requested-With` header, so a cross-site form cannot call
+them. See [docs/api.md](docs/api.md). The SPA is plain JavaScript with **no build step**.
+
 ## Commands
 
 ```
@@ -151,7 +170,7 @@ Exit codes: `0` ok, `1` run failed, `2` config error, `3` re-authorisation neede
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest        # 103 offline tests (synthetic fnOS DB + fake tracker)
+python -m pytest        # 114 offline tests (synthetic fnOS DB + fake tracker)
 ruff check src tests
 ```
 

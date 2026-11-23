@@ -1,0 +1,131 @@
+# HTTP API
+
+Web 界面与脚本共用同一套 JSON 接口，默认监听 `0.0.0.0:8099`（`[server] listen`）。
+
+## 鉴权与约定
+
+* **没有登录**：只应在局域网使用；需要远程访问时把 `server.listen` 改为 `127.0.0.1:8099` 再走 SSH 隧道。
+* **读接口**无需额外请求头。
+* **写接口**（POST/DELETE）必须带：
+
+  ```
+  X-Requested-With: bangumi-syncer
+  ```
+
+  否则返回 `403`。浏览器跨站表单无法设置自定义头，服务端也不返回 CORS 头，因此可挡住 CSRF。
+* 请求/响应均为 `application/json; charset=utf-8`；错误统一为 `{"error": "..."}`。
+* 时间字段除特别说明外都是 **epoch 秒**；显示用的字符串字段以 `_human` 结尾。
+
+## 读接口
+
+### `GET /healthz`
+
+```json
+{"ok": true, "version": "0.1.0"}
+```
+
+### `GET /api/status`
+
+界面渲染所需的全部数据：
+
+| 字段 | 说明 |
+| --- | --- |
+| `version` / `dry_run` / `timezone` | 基本信息 |
+| `uptime_seconds` / `next_run_at` / `next_run_at_human` | 循环状态 |
+| `run_requested` | 是否已排队一次手动同步 |
+| `source` | 数据源类型、模式、`stats`（季/集/用户/过滤数） |
+| `users` | 配置里的飞牛用户 → 账号 |
+| `accounts` | 账号令牌状态：`has_token`、`expires_at`、`remote_user` |
+| `stats` | 映射数、推送数、失败数、候选数 |
+| `runs` | 最近 10 次运行（含 `started_at_human`、`duration`） |
+| `mappings` | 映射表（含 `subject_url`、已推送计数） |
+| `review` | 待复核条目（候选 + 原因） |
+| `last_result` | 本进程内最近一次运行的详细结果 |
+| `logs` | 最近 200 行日志 |
+| `config` | 打码后的运行配置（`client_secret` → `***`） |
+
+### `GET /api/logs?limit=200`
+
+```json
+{"lines": ["01:08:45 INFO  bangumi_syncer.sync ..."], "run_requested": false}
+```
+
+`limit` 取值 1–1000，默认 200。
+
+### `GET /api/search?q=关键词&limit=8&account=main`
+
+代理 Bangumi 的公开条目搜索（不需要令牌）。
+
+```json
+{"query": "药屋少女的呢喃", "results": [
+  {"subject_id": 420628, "name": "薬屋のひとりごと", "name_cn": "药屋少女的呢喃", "year": 2023, "eps": 24}
+]}
+```
+
+Bangumi 侧失败时返回 `502`。
+
+## 写接口
+
+### `POST /api/run`
+
+请求常驻循环立刻跑一轮（最多 0.5 秒内被拾取）。
+
+```json
+202 {"queued": true}
+409 {"error": "a sync run is already queued"}
+```
+
+### `POST /api/map`
+
+创建或覆盖映射（等价于 `bangumi-syncer map add`）。
+
+```json
+{
+  "account": "main",
+  "series_key": "fnos:adcd8af1...:s1",
+  "subject_id": 486347,
+  "ep_from": 25,
+  "ep_to": 48,
+  "name": "药屋少女的呢喃 第二季"
+}
+```
+
+`ep_from`/`ep_to` 可省略（默认 1–9999）；`name` 省略时会尝试从 Bangumi 取。成功返回：
+
+```json
+200 {"ok": true, "subject_id": 486347, "ep_from": 25, "ep_to": 48,
+     "subject_name": "药屋少女的呢喃 第二季", "cleared_pushes": 0}
+```
+
+副作用：删除该区间的推送记录（下一轮重新推送）、删除该条目的复核候选。
+
+### `DELETE /api/map?account=main&series_key=...&ep_from=25`
+
+删除映射。`ep_from` 省略时删除该条目全部映射与推送记录；给出时只处理对应区间。
+
+```json
+200 {"ok": true, "removed": 1, "cleared_pushes": 24}
+```
+
+### `DELETE /api/candidates?account=main&series_key=...`
+
+只从待复核队列移除（不创建映射），之后若仍匹配失败会再次出现。
+
+```json
+200 {"ok": true}
+```
+
+## 示例
+
+```bash
+# 触发一次同步
+curl -s -X POST -H 'X-Requested-With: bangumi-syncer' http://nas:8099/api/run
+
+# 搜索条目
+curl -s 'http://nas:8099/api/search?q=%E8%8D%AF%E5%B1%8B%E5%B0%91%E5%A5%B3%E7%9A%84%E5%91%A2%E5%96%83'
+
+# 合并季拆分：25–48 集映射到第二季
+curl -s -X POST -H 'Content-Type: application/json' -H 'X-Requested-With: bangumi-syncer' \
+  -d '{"account":"main","series_key":"fnos:xxxx:s1","subject_id":486347,"ep_from":25,"ep_to":48}' \
+  http://nas:8099/api/map
+```

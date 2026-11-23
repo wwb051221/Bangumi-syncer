@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import json
+import logging
 import socket
 import time
+import urllib.error
 import urllib.request
 
+import pytest
 from conftest import make_config
 
 from bangumi_syncer.config import ServerConfig
 from bangumi_syncer.server import StatusServer, StatusState, build_status
 from bangumi_syncer.state import StateStore
+
+HEADER = {"X-Requested-With": "bangumi-syncer"}
 
 
 def free_port() -> int:
@@ -20,42 +25,180 @@ def free_port() -> int:
     return port
 
 
-def test_status_page_and_api(tmp_path, fnos_db):
+class Client:
+    def __init__(self, base: str) -> None:
+        self.base = base
+
+    def get(self, path: str):
+        with urllib.request.urlopen(self.base + path, timeout=10) as response:
+            return response.status, response.read()
+
+    def get_json(self, path: str):
+        status, body = self.get(path)
+        return status, json.loads(body or b"{}")
+
+    def send(self, method: str, path: str, body=None, header: bool = True):
+        data = json.dumps(body).encode() if body is not None else None
+        headers = {"Content-Type": "application/json"} if data is not None else {}
+        if header:
+            headers.update(HEADER)
+        request = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return response.status, json.loads(response.read() or b"{}")
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read() or b"{}")
+
+
+@pytest.fixture()
+def server(tmp_path, fnos_db):
     cfg = make_config(fnos_db, str(tmp_path / "state.db"), dry_run=True)
     cfg.server = ServerConfig(enabled=True, listen="127.0.0.1:%d" % free_port())
     store = StateStore(cfg.app.state_db)
-    store.save_mapping("main", "fnos:abc:s1", subject_id=1940, subject_name="\u9b54\u5361\u5c11\u5973\u6a31",
+    store.save_mapping("main", "fnos:abc:s1", subject_id=1940, subject_name="魔卡少女樱",
                        strategy="auto", confidence=1.0)
     store.save_candidates("main", "fnos:def:s1", {
-        "title": "\u672a\u5339\u914d\u756a\u7ec4",
+        "title": "未匹配番组",
         "season": 1,
+        "year": 2016,
         "episode_count": 21,
         "reason": "best candidate 0.394 < min_score 0.860",
-        "candidates": [{"subject_id": 148295, "name": "\u8336\u554a\u4e8c\u4e2d", "name_cn": "\u8336\u554a\u4e8c\u4e2d",
+        "candidates": [{"subject_id": 148295, "name": "茶啊二中", "name_cn": "茶啊二中",
                         "year": 2014, "eps": 10, "score": 0.394}],
     })
     state = StatusState(started_at=int(time.time()) - 5, dry_run=True)
-    server = StatusServer(cfg, store, state)
-    server.start()
+    instance = StatusServer(cfg, store, state)
+    instance.start()
+    client = Client(instance.address)
     try:
-        page = urllib.request.urlopen(server.address, timeout=10).read().decode("utf-8")
-        assert "Bangumi-syncer" in page
-        assert "DRY-RUN" in page
-        assert "\u9b54\u5361\u5c11\u5973\u6a31" in page
-        assert "\u672a\u5339\u914d\u756a\u7ec4" in page
-        assert "bangumi-syncer map add" in page
-
-        api = json.loads(urllib.request.urlopen(server.address + "api/status", timeout=10).read())
-        assert api["dry_run"] is True
-        assert api["stats"]["mappings"] == 1
-        assert len(api["review"]) == 1
-        assert api["mappings"][0]["subject_url"].endswith("/1940")
-
-        health = urllib.request.urlopen(server.address + "healthz", timeout=10).read()
-        assert b'"ok": true' in health or b'"ok":true' in health
+        yield client, instance, store
     finally:
-        server.stop()
+        instance.stop()
         store.close()
+
+
+def test_index_serves_the_spa(server):
+    client, _instance, _store = server
+    status, body = client.get("")
+    text = body.decode("utf-8")
+    assert status == 200
+    assert '<div id="app"' not in text  # it is <main id="app">
+    assert 'id="app"' in text
+    assert "/static/app.js" in text
+    assert "/static/style.css" in text
+    assert "Bangumi-syncer" in text
+
+
+def test_static_assets(server):
+    client, _instance, _store = server
+    status, body = client.get("static/app.js")
+    script = body.decode("utf-8")
+    assert status == 200
+    assert "X-Requested-With" in script
+    assert "api/map" in script
+
+    status, body = client.get("static/style.css")
+    assert status == 200
+    assert b"--accent" in body
+
+
+def test_healthz(server):
+    client, _instance, _store = server
+    status, payload = client.get_json("healthz")
+    assert status == 200
+    assert payload["ok"] is True
+
+
+def test_status_api_exposes_ui_state(server):
+    client, instance, _store = server
+    status, payload = client.get_json("api/status")
+    assert status == 200
+    assert payload["dry_run"] is True
+    assert payload["stats"]["mappings"] == 1
+    assert len(payload["review"]) == 1
+    assert payload["review"][0]["title"] == "未匹配番组"
+    assert payload["mappings"][0]["subject_url"].endswith("/1940")
+    # secrets are redacted inside the embedded config
+    assert payload["config"]["target"]["accounts"][0]["client_secret"] == "***"
+    assert payload["run_requested"] is False
+    assert payload["users"][0]["fnos_user"] == "alice"
+
+
+def test_run_endpoint_requires_header(server):
+    client, instance, _store = server
+    status, payload = client.send("POST", "api/run", header=False)
+    assert status == 403
+    assert "X-Requested-With" in payload["error"]
+    assert not instance.state.run_requested.is_set()
+
+    status, payload = client.send("POST", "api/run")
+    assert status == 202 and payload["queued"] is True
+    assert instance.state.run_requested.is_set()
+
+    assert client.send("POST", "api/run")[0] == 409  # already queued
+
+
+def test_map_create_and_delete(server):
+    client, _instance, store = server
+    store.record_push("main", "fnos:def:s1", 1, "sent")
+    status, payload = client.send("POST", "api/map", {
+        "account": "main", "series_key": "fnos:def:s1", "subject_id": 148295,
+        "ep_from": 1, "ep_to": 21, "name": "茶啊二中",
+    })
+    assert status == 200 and payload["ok"] is True
+    assert payload["cleared_pushes"] == 1
+    row = store.mapping_for("main", "fnos:def:s1", 5)
+    assert row is not None and row["subject_id"] == 148295 and row["confirmed"] == 1
+    assert store.candidates("main") == []
+
+    status, payload = client.send(
+        "DELETE", "api/map?account=main&series_key=fnos%3Adef%3As1&ep_from=1")
+    assert status == 200 and payload["removed"] == 1
+    assert store.mapping_groups("main", "fnos:def:s1") == []
+
+
+def test_map_validation(server):
+    client, _instance, _store = server
+    bad = [
+        {"account": "nope", "series_key": "k", "subject_id": 1},
+        {"account": "main", "series_key": "", "subject_id": 1},
+        {"account": "main", "series_key": "k", "subject_id": 0},
+        {"account": "main", "series_key": "k", "subject_id": 1, "ep_from": 5, "ep_to": 2},
+    ]
+    for body in bad:
+        status, payload = client.send("POST", "api/map", body)
+        assert status == 400, (body, payload)
+        assert "error" in payload
+
+
+def test_candidate_delete(server):
+    client, _instance, store = server
+    status, _payload = client.send(
+        "DELETE", "api/candidates?account=main&series_key=fnos%3Adef%3As1")
+    assert status == 200
+    assert store.candidates("main") == []
+
+
+def test_search_requires_query(server):
+    client, _instance, _store = server
+    status, payload = client.send("GET", "api/search")
+    # GET does not need the write header; it fails on the missing query instead
+    assert status == 400
+    assert "q is required" in payload["error"]
+
+
+def test_unknown_route(server):
+    client, _instance, _store = server
+    status, payload = client.send("GET", "api/nope")
+    assert status == 404
+
+
+def test_log_ring_is_exposed(server):
+    client, instance, _store = server
+    logging.getLogger("test.ring").warning("ring-buffer-hello")
+    status, payload = client.get_json("api/logs?limit=50")
+    assert status == 200
+    assert any("ring-buffer-hello" in line for line in payload["lines"])
 
 
 def test_build_status_without_runtime_state(tmp_path, fnos_db):
@@ -64,7 +207,8 @@ def test_build_status_without_runtime_state(tmp_path, fnos_db):
     try:
         data = build_status(cfg, store, None)
         assert data["last_result"] is None
+        assert data["run_requested"] is False
+        assert data["logs"] == []
         assert data["users"][0]["fnos_user"] == "alice"
-        assert data["runs"] == []
     finally:
         store.close()

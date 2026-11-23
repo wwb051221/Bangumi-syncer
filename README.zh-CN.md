@@ -8,7 +8,7 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Image size](https://img.shields.io/badge/image-~120MB-informational.svg)](#docker)
 
-**English**: [README.md](README.md) · **设计文档**: [架构](docs/architecture.md) · [匹配算法](docs/mapping.md) · [飞牛数据库结构](docs/schema.md) · [验证记录](docs/verification.md)
+**English**: [README.md](README.md) · **设计文档**: [架构](docs/architecture.md) · [匹配算法](docs/mapping.md) · [飞牛数据库结构](docs/schema.md) · [HTTP API](docs/api.md) · [验证记录](docs/verification.md)
 
 ---
 
@@ -101,6 +101,26 @@ docker compose logs -f
 > 没有 Docker？也可以直接跑：
 > `pip install .` → `bangumi-syncer --config config.toml run`
 > （需要能读到 `trimmedia.db`，即 root 或已放宽 ACL）。
+
+## Web 界面
+
+容器启动后访问 `http://<飞牛IP>:8099/`：
+
+| 页面 | 能做什么 |
+| --- | --- |
+| **概览** | 运行状态、数据源统计（季/集/用户/过滤数）、用户本轮结果、最近 10 次运行 |
+| **待复核** | 查看候选条目与评分、单选确认映射、填区间（合并季拆分）、手动填 subject id、移除候选 |
+| **映射** | 新增/覆盖映射、按关键词搜索 Bangumi 条目并回填、删除映射（同时清该区间推送记录） |
+| **账号** | 令牌状态与过期时间、复制授权命令 |
+| **日志** | 最近 400 行实时日志（2 秒刷新） |
+| **设置** | 打码后的运行配置、常用命令 |
+
+右上角「立即同步」会让常驻循环立刻跑一轮（最多等 0.5 秒），适合刚看完一集时手动触发。
+
+> 页面**没有登录鉴权**，请只在局域网暴露（或把 `server.listen` 改成 `127.0.0.1:8099` 后用 SSH 隧道）。
+> 写操作要求自定义请求头 `X-Requested-With`，跨站表单无法直接调用；接口清单见 [docs/api.md](docs/api.md)。
+
+前端是原生 JS 单页应用，**没有构建步骤**、没有 Node 依赖，静态资源随 Python 包一起分发。
 
 ## 配置说明
 
@@ -292,7 +312,7 @@ docker build --build-arg BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim \
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-python -m pytest            # 103 个用例，全部离线（含模拟 fnOS 库）
+python -m pytest            # 114 个用例，全部离线（含模拟 fnOS 库）
 ruff check src tests
 ```
 
@@ -309,7 +329,7 @@ src/bangumi_syncer/
   state.py         SQLite 状态（令牌/映射/推送/候选/运行）
   server.py        只读状态页 + JSON
   cli.py           命令行
-tests/             103 个离线用例（真实 schema 的模拟库 + 假 tracker）
+tests/             114 个离线用例（真实 schema 的模拟库 + 假 tracker）
 docs/              架构、匹配算法、飞牛库结构
 ```
 

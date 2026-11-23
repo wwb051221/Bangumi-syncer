@@ -1,21 +1,32 @@
-"""Read-only status page and JSON API.
+"""Read-mostly web UI + JSON API served by the running sync process.
 
-Deliberately read-only: all mutations go through the CLI (which is easy to
-audit and to run over SSH). The page shows what the last run did, which shows
-are mapped and which ones still need a human decision.
+* ``/``                the SPA (vanilla JS, no build step)
+* ``/api/status``      everything the UI renders, including a redacted config
+* ``/api/logs``        in-memory ring buffer of recent log lines
+* ``/api/search``      public Bangumi subject search (used by the mapping editor)
+* ``POST /api/run``    ask the loop to sync right now
+* ``POST /api/map``    create/override a mapping (manual strategy)
+* ``DELETE /api/map``  remove a mapping (and the push history of that range)
+* ``DELETE /api/candidates``  drop an item from the review queue
+
+Write endpoints require the ``X-Requested-With: bangumi-syncer`` header, which a
+cross-site HTML form cannot set; combined with no CORS headers that is enough
+for a LAN-only tool. The page itself never displays tokens.
 """
 
 from __future__ import annotations
 
-import html
 import json
+import logging
 import threading
 import time
+import urllib.parse
+from collections import deque
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from . import __version__
+from . import __version__, trackers
 from .config import Config
 from .log import get_logger
 from .state import StateStore
@@ -24,16 +35,55 @@ from .util import format_time, human_duration
 
 log = get_logger("server")
 
+STATIC_FILES = {
+    "/static/app.js": ("app.js", "application/javascript; charset=utf-8"),
+    "/static/style.css": ("style.css", "text/css; charset=utf-8"),
+}
+LOG_LIMIT = 500
+
+
+class HttpError(Exception):
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+class _RingHandler(logging.Handler):
+    """Keep recent log lines in memory so the UI can show them."""
+
+    def __init__(self, sink: deque[str]) -> None:
+        super().__init__()
+        self.sink = sink
+        self.setFormatter(logging.Formatter("%(asctime)s %(levelname)-5s %(name)s %(message)s",
+                                            datefmt="%H:%M:%S"))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self.sink.append(self.format(record))
+        except Exception:  # pragma: no cover - logging must never raise
+            pass
+
 
 @dataclass
 class StatusState:
-    """Mutable run information shared between the loop and the HTTP thread."""
+    """Mutable information shared between the sync loop and the HTTP threads."""
 
     started_at: int
     dry_run: bool
     source_description: dict[str, Any] = field(default_factory=dict)
     last_result: RunResult | None = None
     next_run_at: int | None = None
+    run_requested: threading.Event = field(default_factory=threading.Event)
+    logs: deque[str] = field(default_factory=lambda: deque(maxlen=LOG_LIMIT))
+
+    def log_lines(self, limit: int = 200) -> list[str]:
+        lines = list(self.logs)
+        return lines[-limit:] if limit > 0 else lines
+
+
+def _json_response(payload: Any) -> bytes:
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
 def build_status(cfg: Config, store: StateStore, state: StatusState | None = None) -> dict[str, Any]:
@@ -43,225 +93,52 @@ def build_status(cfg: Config, store: StateStore, state: StatusState | None = Non
         run["started_at_human"] = format_time(run.get("started_at"), tz)
         if run.get("finished_at"):
             run["duration"] = human_duration((run["finished_at"] or 0) - (run["started_at"] or 0))
+
     mappings = []
     for row in store.mappings()[:200]:
         item = dict(row)
         item["subject_url"] = "https://bgm.tv/subject/%d" % item["subject_id"]
         mappings.append(item)
+
     review = []
     for row in store.candidates():
         payload = row.get("payload") or {}
-        review.append(
-            {
-                "account": row["account"],
-                "series_key": row["series_key"],
-                "title": payload.get("title", ""),
-                "original_title": payload.get("original_title"),
-                "season": payload.get("season"),
-                "year": payload.get("year"),
-                "episode_count": payload.get("episode_count"),
-                "reason": payload.get("reason", ""),
-                "candidates": (payload.get("candidates") or [])[:5],
-                "updated_at": row["updated_at"],
-            }
-        )
-    payload = {
+        review.append({
+            "account": row["account"],
+            "series_key": row["series_key"],
+            "title": payload.get("title", ""),
+            "original_title": payload.get("original_title"),
+            "season": payload.get("season"),
+            "year": payload.get("year"),
+            "episode_count": payload.get("episode_count"),
+            "reason": payload.get("reason", ""),
+            "candidates": (payload.get("candidates") or [])[:8],
+            "updated_at": row["updated_at"],
+        })
+
+    accounts = store.accounts()
+    for account in accounts:
+        account["expires_in"] = max(0, int(account.get("expires_at") or 0) - int(time.time()))
+
+    return {
         "version": __version__,
         "dry_run": cfg.app.dry_run,
         "timezone": tz,
         "uptime_seconds": int(time.time() - state.started_at) if state else 0,
         "next_run_at": state.next_run_at if state else None,
         "next_run_at_human": format_time(state.next_run_at if state else None, tz),
+        "run_requested": bool(state.run_requested.is_set()) if state else False,
         "source": (state.source_description if state else {}) or {"type": cfg.source.type, "mode": cfg.source.mode},
         "users": [{"fnos_user": u.fnos_user, "account": u.account, "enabled": u.enabled} for u in cfg.users],
-        "accounts": store.accounts(),
+        "accounts": accounts,
         "stats": store.stats(),
         "runs": runs,
         "mappings": mappings,
         "review": review,
         "last_result": state.last_result.as_dict() if state and state.last_result else None,
+        "logs": state.log_lines(200) if state else [],
+        "config": cfg.redacted(),
     }
-    return payload
-
-
-STYLE = """
-:root { color-scheme: light dark; }
-* { box-sizing: border-box; }
-body { font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-       margin: 0; padding: 1.5rem; line-height: 1.5; background: #0f1115; color: #e6e8ee; }
-h1 { font-size: 1.35rem; margin: 0 0 .25rem; }
-h2 { font-size: 1rem; margin: 1.75rem 0 .6rem; color: #9fb2d0; text-transform: uppercase; letter-spacing: .08em; }
-a { color: #7db3ff; text-decoration: none; }
-a:hover { text-decoration: underline; }
-.muted { color: #8b95a7; }
-.badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .78rem; font-weight: 600; }
-.badge.ok { background: #123524; color: #6ee7a8; }
-.badge.warn { background: #3a2a10; color: #f5c26b; }
-.badge.dry { background: #1b2b45; color: #9fc5ff; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; margin-top: 1rem; }
-.card { background: #171a21; border: 1px solid #242a35; border-radius: .6rem; padding: .8rem 1rem; }
-.card .n { font-size: 1.6rem; font-weight: 700; }
-.card .l { color: #8b95a7; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
-table { width: 100%; border-collapse: collapse; background: #171a21; border: 1px solid #242a35;
-        border-radius: .6rem; overflow: hidden; font-size: .88rem; }
-th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid #222833; vertical-align: top; }
-th { background: #1b1f27; color: #9fb2d0; font-weight: 600; font-size: .78rem; text-transform: uppercase; }
-tr:last-child td { border-bottom: none; }
-code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .82rem; }
-pre { background: #0b0d11; border: 1px solid #222833; border-radius: .4rem; padding: .5rem .7rem; overflow-x: auto; }
-.empty { color: #6c7788; font-style: italic; padding: .6rem 0; }
-"""
-
-
-def _render(cfg: Config, store: StateStore, state: StatusState | None) -> str:
-    data = build_status(cfg, store, state)
-    tz = cfg.app.timezone
-    e = html.escape
-    parts: list[str] = []
-    parts.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">")
-    parts.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
-    parts.append("<meta http-equiv=\"refresh\" content=\"15\">")
-    parts.append("<title>Bangumi-syncer</title><style>" + STYLE + "</style></head><body>")
-
-    badge = '<span class="badge dry">DRY-RUN</span>' if data["dry_run"] else '<span class="badge ok">LIVE</span>'
-    parts.append("<h1>Bangumi-syncer <span class=\"muted\">v%s</span> %s</h1>" % (e(data["version"]), badge))
-    parts.append(
-        '<div class="muted">飞牛影视 → Bangumi 追番进度同步 · uptime %s · next run %s · '
-        '<a href="/api/status">JSON</a> · <a href="/healthz">health</a></div>'
-        % (human_duration(data["uptime_seconds"]), e(data["next_run_at_human"]))
-    )
-
-    stats = data["stats"]
-    last = data["runs"][0] if data["runs"] else None
-    status_badge = "<span class=\"badge ok\">last run ok</span>"
-    if last and not last.get("ok"):
-        status_badge = "<span class=\"badge warn\">last run failed</span>"
-    parts.append('<div class="cards">')
-    for label, value in (
-        ("mappings", stats["mappings"]),
-        ("episodes pushed", stats["pushed"]),
-        ("failed pushes", stats["failed"]),
-        ("need review", len(data["review"])),
-    ):
-        parts.append('<div class="card"><div class="n">%s</div><div class="l">%s</div></div>' % (value, label))
-    parts.append("</div>")
-    parts.append('<div style="margin-top:.75rem">%s</div>' % status_badge)
-
-    # users
-    parts.append("<h2>Users</h2><table><tr><th>fnOS user</th><th>Bangumi account</th><th>enabled</th></tr>")
-    for user in data["users"]:
-        parts.append(
-            "<tr><td>%s</td><td>%s</td><td>%s</td></tr>"
-            % (e(user["fnos_user"]), e(user["account"]), "yes" if user["enabled"] else "no")
-        )
-    if not data["users"]:
-        parts.append('<tr><td colspan="3" class="empty">no users configured</td></tr>')
-    parts.append("</table>")
-
-    # accounts
-    parts.append("<h2>Accounts</h2><table><tr><th>account</th><th>token</th><th>expires</th><th>bangumi user</th></tr>")
-    for account in data["accounts"]:
-        token = '<span class="badge ok">stored</span>' if account.get("has_token") else '<span class="badge warn">missing</span>'
-        parts.append(
-            "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
-            % (e(account["name"]), token, e(format_time(account.get("expires_at"), tz)), e(account.get("remote_user") or "-"))
-        )
-    if not data["accounts"]:
-        parts.append('<tr><td colspan="4" class="empty">run <code>bangumi-syncer oauth --account NAME</code> first</td></tr>')
-    parts.append("</table>")
-
-    # runs
-    parts.append("<h2>Recent runs</h2><table><tr><th>started</th><th>ok</th><th>pushed</th><th>failed</th>"
-                 "<th>matched</th><th>unmatched</th><th>duration</th><th>message</th></tr>")
-    for run in data["runs"]:
-        parts.append(
-            "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
-            % (
-                e(run.get("started_at_human") or "-"),
-                "ok" if run.get("ok") else "fail",
-                run.get("pushed") or 0,
-                run.get("failed") or 0,
-                run.get("matched") or 0,
-                run.get("unmatched") or 0,
-                e(run.get("duration") or "-"),
-                e(run.get("message") or ""),
-            )
-        )
-    if not data["runs"]:
-        parts.append('<tr><td colspan="8" class="empty">no runs yet</td></tr>')
-    parts.append("</table>")
-
-    # review queue
-    parts.append("<h2>Needs review (%d)</h2>" % len(data["review"]))
-    if not data["review"]:
-        parts.append('<div class="empty">nothing waiting for a decision 🎉</div>')
-    for item in data["review"]:
-        parts.append('<div class="card" style="margin-bottom:.75rem">')
-        parts.append(
-            "<div><strong>%s</strong> <span class=\"muted\">S%s · %s · %s eps · %s</span></div>"
-            % (
-                e(item["title"] or item["series_key"]),
-                e(str(item.get("season") or "?")),
-                e(str(item.get("year") or "?")),
-                e(str(item.get("episode_count") or "?")),
-                e(item["reason"]),
-            )
-        )
-        parts.append('<div class="muted"><code>%s</code></div>' % e(item["series_key"]))
-        if item["candidates"]:
-            parts.append("<table style=\"margin-top:.5rem\"><tr><th>subject</th><th>score</th><th>name</th><th>year</th><th>eps</th></tr>")
-            for cand in item["candidates"]:
-                parts.append(
-                    '<tr><td><a href="https://bgm.tv/subject/%d">%d</a></td><td>%s</td><td>%s</td>'
-                    "<td>%s</td><td>%s</td></tr>"
-                    % (
-                        cand["subject_id"],
-                        cand["subject_id"],
-                        cand.get("score", ""),
-                        e(cand.get("name_cn") or cand.get("name") or ""),
-                        e(str(cand.get("year") or "")),
-                        e(str(cand.get("eps") or "")),
-                    )
-                )
-            parts.append("</table>")
-            first = item["candidates"][0]["subject_id"]
-        else:
-            first = 0
-        parts.append(
-            "<pre>bangumi-syncer map add --account %s --series '%s' --subject %s%s</pre>"
-            % (e(item["account"]), e(item["series_key"]), first or "<id>",
-               "" if not item.get("episode_count") else "")
-        )
-        parts.append("</div>")
-
-    # mappings
-    parts.append("<h2>Mappings (%d)</h2><table><tr><th>account</th><th>series key</th><th>local eps</th>"
-                 "<th>subject</th><th>name</th><th>strategy</th><th>score</th><th>pushed</th></tr>")
-    for mapping in data["mappings"]:
-        parts.append(
-            "<tr><td>%s</td><td><code>%s</code></td><td>%s–%s</td>"
-            "<td><a href=\"%s\">%d</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
-            % (
-                e(mapping["account"]),
-                e(mapping["series_key"]),
-                mapping["ep_from"],
-                mapping["ep_to"],
-                e(mapping["subject_url"]),
-                mapping["subject_id"],
-                e(mapping.get("subject_name") or ""),
-                e(mapping.get("strategy") or ""),
-                mapping.get("confidence") or "",
-                mapping.get("pushed") or 0,
-            )
-        )
-    if not data["mappings"]:
-        parts.append('<tr><td colspan="8" class="empty">no mappings yet</td></tr>')
-    parts.append("</table>")
-
-    parts.append('<p class="muted" style="margin-top:2rem">generated %s · dry-run=%s</p>'
-                 % (e(format_time(time.time(), tz)), data["dry_run"]))
-    parts.append("</body></html>")
-    return "".join(parts)
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -270,33 +147,255 @@ class _Handler(BaseHTTPRequestHandler):
     cfg: Config
     store: StateStore
     state: StatusState | None
+    assets: dict[str, bytes]
+    searchers: dict[str, Any]
+    search_lock: threading.Lock
 
+    # ------------------------------------------------------------- transport
     def do_GET(self) -> None:  # noqa: N802
-        path = self.path.split("?", 1)[0]
-        if path == "/healthz":
-            self._send(200, "application/json", json.dumps({"ok": True, "version": __version__}).encode())
-        elif path == "/api/status":
-            payload = build_status(self.cfg, self.store, self.state)
-            self._send(200, "application/json; charset=utf-8",
-                       json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8"))
-        elif path in ("/", "/index.html"):
-            self._send(200, "text/html; charset=utf-8", _render(self.cfg, self.store, self.state).encode("utf-8"))
-        else:
-            self._send(404, "application/json", b'{"error":"not found"}')
+        self._dispatch("GET")
 
-    def _send(self, status: int, content_type: str, body: bytes) -> None:
+    def do_POST(self) -> None:  # noqa: N802
+        self._dispatch("POST")
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        self._dispatch("DELETE")
+
+    def _dispatch(self, method: str) -> None:
+        try:
+            self._route(method)
+        except HttpError as exc:
+            self._send_json(exc.status, {"error": exc.message})
+        except (BrokenPipeError, ConnectionResetError):  # pragma: no cover
+            pass
+        except Exception as exc:  # pragma: no cover - unexpected
+            log.exception("unhandled error for %s %s", method, self.path)
+            self._send_json(500, {"error": "%s: %s" % (type(exc).__name__, exc)})
+
+    def _route(self, method: str) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
+        query = urllib.parse.parse_qs(parsed.query)
+
+        if method == "GET":
+            if path in ("/", "/index.html"):
+                self._send_bytes(200, "text/html; charset=utf-8", self.assets["index.html"])
+                return
+            if path in STATIC_FILES:
+                key, content_type = STATIC_FILES[path]
+                self._send_bytes(200, content_type, self.assets[key], cache_seconds=300)
+                return
+            if path == "/favicon.ico":
+                self._send_bytes(204, "image/x-icon", b"")
+                return
+            if path == "/healthz":
+                self._send_json(200, {"ok": True, "version": __version__})
+                return
+            if path == "/api/status":
+                self._send_json(200, build_status(self.cfg, self.store, self.state))
+                return
+            if path == "/api/logs":
+                limit = _int_param(query, "limit", 200, 1, 1000)
+                lines = self.state.log_lines(limit) if self.state else []
+                self._send_json(200, {"lines": lines, "run_requested":
+                                      bool(self.state.run_requested.is_set()) if self.state else False})
+                return
+            if path == "/api/search":
+                self._handle_search(query)
+                return
+            raise HttpError(404, "not found")
+
+        self._require_write_header()
+        if method == "POST" and path == "/api/run":
+            self._handle_run()
+            return
+        if method == "POST" and path == "/api/map":
+            self._handle_map_create()
+            return
+        if method == "DELETE" and path == "/api/map":
+            self._handle_map_delete(query)
+            return
+        if method == "DELETE" and path == "/api/candidates":
+            self._handle_candidate_delete(query)
+            return
+        raise HttpError(404, "not found")
+
+    # ---------------------------------------------------------------- helpers
+    def _require_write_header(self) -> None:
+        if self.headers.get("X-Requested-With") != "bangumi-syncer":
+            raise HttpError(403, "write operations require the X-Requested-With header")
+
+    def _read_json(self) -> dict[str, Any]:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError as exc:
+            raise HttpError(400, "invalid Content-Length") from exc
+        if length <= 0:
+            raise HttpError(400, "empty request body")
+        if length > 65536:
+            raise HttpError(413, "request body too large")
+        raw = self.rfile.read(length)
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HttpError(400, "invalid JSON body") from exc
+        if not isinstance(payload, dict):
+            raise HttpError(400, "expected a JSON object")
+        return payload
+
+    # ------------------------------------------------------------------ APIs
+    def _handle_run(self) -> None:
+        if self.state is None:
+            raise HttpError(503, "the sync loop is not running in this process")
+        if self.state.run_requested.is_set():
+            raise HttpError(409, "a sync run is already queued")
+        self.state.run_requested.set()
+        log.info("sync run requested from the web UI")
+        self._send_json(202, {"queued": True})
+
+    def _handle_search(self, query: dict[str, list[str]]) -> None:
+        term = (query.get("q") or [""])[0].strip()
+        if not term:
+            raise HttpError(400, "q is required")
+        limit = _int_param(query, "limit", 8, 1, 20)
+        account_name = (query.get("account") or [""])[0] or self.cfg.target.accounts[0].name
+        tracker = self._tracker(account_name)
+        try:
+            hits = tracker.search(term, limit, self.cfg.match.accept_types)
+        except trackers.TrackerError as exc:
+            raise HttpError(502, "Bangumi search failed: %s" % exc) from exc
+        self._send_json(200, {"query": term, "results": [
+            {"subject_id": hit.subject_id, "name": hit.name, "name_cn": hit.name_cn,
+             "year": hit.year, "eps": hit.episode_count}
+            for hit in hits
+        ]})
+
+    def _tracker(self, account_name: str):
+        with self.search_lock:
+            tracker = self.searchers.get(account_name)
+            if tracker is None:
+                tracker = trackers.create(self.cfg.account(account_name), self.cfg.target, self.store)
+                self.searchers[account_name] = tracker
+            return tracker
+
+    def _handle_map_create(self) -> None:
+        body = self._read_json()
+        account = str(body.get("account") or "")
+        series_key = str(body.get("series_key") or "").strip()
+        subject_id = _as_int(body.get("subject_id"))
+        ep_from = _as_int(body.get("ep_from") if body.get("ep_from") is not None else 1)
+        ep_to = _as_int(body.get("ep_to") if body.get("ep_to") is not None else 9999)
+        name = str(body.get("name") or "").strip()
+
+        if account not in [a.name for a in self.cfg.target.accounts]:
+            raise HttpError(400, "unknown account %r" % account)
+        if not series_key:
+            raise HttpError(400, "series_key is required")
+        if subject_id is None or subject_id <= 0:
+            raise HttpError(400, "subject_id must be a positive integer")
+        if ep_from is None or ep_to is None or ep_from < 1 or ep_to < ep_from or ep_to > 99999:
+            raise HttpError(400, "invalid episode range")
+
+        if not name:
+            try:
+                name = self._tracker(account).subject_name(subject_id) or ""
+            except trackers.TrackerError:
+                name = ""
+
+        self.store.save_mapping(
+            account, series_key, subject_id=subject_id, subject_name=name,
+            strategy="manual", confidence=1.0, ep_from=ep_from, ep_to=ep_to, confirmed=True,
+        )
+        cleared = self.store.delete_pushes(account, series_key, ep_from, ep_to)
+        self.store.delete_candidates(account, series_key)
+        log.info("mapping saved from the web UI: %s -> %d [%d-%d]", series_key, subject_id, ep_from, ep_to)
+        self._send_json(200, {"ok": True, "series_key": series_key, "subject_id": subject_id,
+                              "ep_from": ep_from, "ep_to": ep_to, "subject_name": name,
+                              "cleared_pushes": cleared})
+
+    def _handle_map_delete(self, query: dict[str, list[str]]) -> None:
+        account = (query.get("account") or [""])[0]
+        series_key = (query.get("series_key") or [""])[0]
+        ep_from = _optional_int((query.get("ep_from") or [None])[0])
+        if account not in [a.name for a in self.cfg.target.accounts]:
+            raise HttpError(400, "unknown account %r" % account)
+        if not series_key:
+            raise HttpError(400, "series_key is required")
+
+        target = None
+        if ep_from is not None:
+            for row in self.store.mapping_groups(account, series_key):
+                if row["ep_from"] == ep_from:
+                    target = row
+                    break
+        removed = self.store.delete_mapping(account, series_key, ep_from)
+        if target is not None:
+            cleared = self.store.delete_pushes(account, series_key, int(target["ep_from"]), int(target["ep_to"]))
+        elif ep_from is None:
+            cleared = self.store.delete_pushes(account, series_key)
+        else:
+            cleared = 0
+        log.info("mapping removed from the web UI: %s (%d row(s))", series_key, removed)
+        self._send_json(200, {"ok": True, "removed": removed, "cleared_pushes": cleared})
+
+    def _handle_candidate_delete(self, query: dict[str, list[str]]) -> None:
+        account = (query.get("account") or [""])[0]
+        series_key = (query.get("series_key") or [""])[0]
+        if not account or not series_key:
+            raise HttpError(400, "account and series_key are required")
+        self.store.delete_candidates(account, series_key)
+        self._send_json(200, {"ok": True})
+
+    # --------------------------------------------------------------- responses
+    def _send_json(self, status: int, payload: Any) -> None:
+        self._send_bytes(status, "application/json; charset=utf-8", _json_response(payload))
+
+    def _send_bytes(self, status: int, content_type: str, body: bytes,
+                    cache_seconds: int = 0) -> None:
         try:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", "no-store" if cache_seconds == 0
+                             else "public, max-age=%d" % cache_seconds)
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
-            self.wfile.write(body)
+            if body:
+                self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):  # pragma: no cover
             pass
 
     def log_message(self, fmt: str, *args) -> None:
         log.debug("http %s", fmt % args)
+
+
+def _int_param(query: dict[str, list[str]], name: str, default: int, low: int, high: int) -> int:
+    raw = (query.get(name) or [""])[0]
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(low, min(high, value))
+
+
+def _optional_int(value: str | None) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _as_int(value: Any) -> int | None:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class StatusServer:
@@ -306,6 +405,8 @@ class StatusServer:
         self.state = state
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._ring: _RingHandler | None = None
+        self._assets = _load_assets()
 
     @property
     def address(self) -> str:
@@ -317,16 +418,31 @@ class StatusServer:
         handler = type(
             "BoundHandler",
             (_Handler,),
-            {"cfg": self.cfg, "store": self.store, "state": self.state},
+            {
+                "cfg": self.cfg,
+                "store": self.store,
+                "state": self.state,
+                "assets": self._assets,
+                "searchers": {},
+                "search_lock": threading.Lock(),
+            },
         )
         self._server = ThreadingHTTPServer((host, port), handler)
         self._server.daemon_threads = True
-        self._thread = threading.Thread(target=self._server.serve_forever, kwargs={"poll_interval": 0.5},
+        if self.state is not None:
+            self._ring = _RingHandler(self.state.logs)
+            self._ring.setLevel(logging.INFO)
+            logging.getLogger().addHandler(self._ring)
+        self._thread = threading.Thread(target=self._server.serve_forever,
+                                        kwargs={"poll_interval": 0.5},
                                         daemon=True, name="status-server")
         self._thread.start()
-        log.info("status page on %s", self.address)
+        log.info("web UI on %s", self.address)
 
     def stop(self) -> None:
+        if self._ring is not None:
+            logging.getLogger().removeHandler(self._ring)
+            self._ring = None
         if self._server is not None:
             self._server.shutdown()
             self._server.server_close()
@@ -334,3 +450,13 @@ class StatusServer:
         if self._thread is not None:
             self._thread.join(timeout=3)
             self._thread = None
+
+
+def _load_assets() -> dict[str, bytes]:
+    from importlib import resources
+
+    assets: dict[str, bytes] = {}
+    package = resources.files("bangumi_syncer.web")
+    for name in ("index.html", "app.js", "style.css"):
+        assets[name] = package.joinpath(name).read_bytes()
+    return assets

@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **Web 管理界面**（`http://<nas>:8099/`，原生 JS SPA，无构建步骤）：概览、待复核（点选候选
+  即可确认映射、支持区间拆分与手动 subject id）、映射管理（增删/搜索 Bangumi 条目）、
+  账号令牌状态、实时日志、只读配置，以及「立即同步」按钮。
+- 配套 HTTP API：`/api/status`、`/api/logs`、`/api/search`、`POST /api/run`、
+  `POST|DELETE /api/map`、`DELETE /api/candidates`；写操作要求 `X-Requested-With` 头。
+  文档见 [docs/api.md](docs/api.md)。
+
 ### 修复
 
 - `match.accept_types` 之前未生效（搜索硬编码为动画 type=2），现在会传给 Bangumi 搜索接口。

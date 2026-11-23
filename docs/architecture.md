@@ -56,6 +56,21 @@ SyncEngine.run()
   SQLite 开了 `wal` + `busy_timeout=30s`。
 * HTTP 客户端按账号限速（`min_interval_seconds`），同步循环与状态页共享同一批客户端实例。
 
+## Web 层
+
+* `server.py` 在同步循环同一进程里起一个 `ThreadingHTTPServer`（daemon 线程），
+  默认 `0.0.0.0:8099`。
+* 前端是 `src/bangumi_syncer/web/` 下的原生 JS 单页应用（`index.html` / `app.js` / `style.css`），
+  通过 `importlib.resources` 随包分发，**没有构建步骤**。
+* `GET /api/status` 一次返回界面所需的全部数据（含打码配置与最近日志）；
+  `GET /api/logs` 供日志页轮询；`GET /api/search` 代理 Bangumi 公开搜索。
+* 写操作（`POST /api/run`、`POST|DELETE /api/map`、`DELETE /api/candidates`）要求
+  `X-Requested-With: bangumi-syncer`，服务端不返回 CORS 头，跨站表单无法调用。
+* 「立即同步」通过 `StatusState.run_requested`（`threading.Event`）通知循环；
+  循环在 `interval` 等待中每 0.5 秒检查一次，因此最迟半秒内开始新的一轮，不需要第二个执行线程。
+* 日志页数据来自挂在 root logger 上的环形缓冲 handler（500 行），随 `StatusServer.stop()` 移除。
+* 接口清单见 [api.md](api.md)。
+
 ## 扩展点
 
 ### 新的媒体服务器
@@ -111,4 +126,4 @@ class JellyfinSource(SourceAdapter):
 * `test_cli.py` 直接调 `cli.main([...])` 跑 `dump` / `status` / `map` / `review` / `run --once`，
   验证退出码与输出（不联网）。
 * 覆盖：快照解析、过滤、比例判定、区间映射、幂等、远端核对、收藏完成、鉴权失败、限速重试。
-* 全部离线（103 个用例，约 7 秒）。
+* 全部离线（114 个用例，约 13 秒）。

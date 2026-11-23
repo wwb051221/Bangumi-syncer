@@ -169,7 +169,15 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
                 log.warning("run failed: %s", result.error)
                 if result.auth_error:
                     log.warning("hint: bangumi-syncer oauth --account <name>")
-            stop.wait(interval)
+            # Sleep until the next interval, but wake up early for a manual
+            # "sync now" request coming from the web UI.
+            deadline = time.time() + interval
+            while not stop.is_set() and time.time() < deadline:
+                if status_state is not None and status_state.run_requested.is_set():
+                    status_state.run_requested.clear()
+                    log.info("manual sync request picked up")
+                    break
+                stop.wait(0.5)
         log.info("sync loop stopped")
     finally:
         if status_server is not None:
