@@ -163,6 +163,7 @@ function openSelectMenu(wrap) {
   if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 4);
   menu.style.top = top + 'px';
   wrap.classList.add('open');
+  wrap.__openedAt = performance.now();
   button.setAttribute('aria-expanded', 'true');
 }
 
@@ -1728,7 +1729,13 @@ window.addEventListener('hashchange', () => {
 
 window.addEventListener('resize', updateLayoutFlag);
 window.addEventListener('resize', () => closeSelectMenus());
-window.addEventListener('scroll', () => closeSelectMenus(), true);
+window.addEventListener('scroll', () => {
+  const open = document.querySelector('[data-select].open');
+  if (!open) return;
+  // ignore the scroll a tap may cause while opening the menu
+  if (performance.now() - (open.__openedAt || 0) < 350) return;
+  closeSelectMenus();
+}, true);
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeSelectMenus();
