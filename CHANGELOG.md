@@ -19,6 +19,9 @@
 
 ### 修复
 
+- **飞牛重写数据库时可能出现「空快照」**：只读 `VACUUM INTO` 会得到一个合法但无表的 SQLite 文件，
+  `quick_check` 仍然通过，旧版本因此整轮同步失败。现在快照后校验必需表，不完整时保留上一份
+  可用快照并记录告警，只有完全没有旧快照时才报错重试（实机已复现并验证修复）。
 - `match.accept_types` 之前未生效（搜索硬编码为动画 type=2），现在会传给 Bangumi 搜索接口。
 - `map add/list/remove` 的 `--account` / `--user` 必须写在动作之前才生效（与 README 用法不符），
   现在 `bangumi-syncer map add --account main ...` 可用。

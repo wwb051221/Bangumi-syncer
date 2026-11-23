@@ -141,4 +141,4 @@ class JellyfinSource(SourceAdapter):
 * `test_cli.py` 直接调 `cli.main([...])` 跑 `dump` / `status` / `map` / `review` / `run --once`，
   验证退出码与输出（不联网）。
 * 覆盖：快照解析、过滤、比例判定、区间映射、幂等、远端核对、收藏完成、鉴权失败、限速重试。
-* 全部离线（132 个用例，约 17 秒）。
+* 全部离线（135 个用例，约 17 秒）。

@@ -328,7 +328,7 @@ docker build --build-arg BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim \
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-python -m pytest            # 132 个用例，全部离线（含模拟 fnOS 库）
+python -m pytest            # 135 个用例，全部离线（含模拟 fnOS 库）
 ruff check src tests
 ```
 
@@ -345,7 +345,7 @@ src/bangumi_syncer/
   state.py         SQLite 状态（令牌/映射/推送/候选/运行）
   server.py        只读状态页 + JSON
   cli.py           命令行
-tests/             132 个离线用例（真实 schema 的模拟库 + 假 tracker）
+tests/             135 个离线用例（真实 schema 的模拟库 + 假 tracker）
 docs/              架构、匹配算法、飞牛库结构
 ```
 
