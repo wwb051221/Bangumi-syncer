@@ -197,7 +197,9 @@ class SyncEngine:
         if account_name not in self._sessions:
             self._sessions[account_name] = _AccountSession(
                 self._factory(account_name),
-                self.cfg.sync.verify_remote,
+                # Remote marks are only an optimisation; a dry run must work
+                # without any credential, so skip that read.
+                self.cfg.sync.verify_remote and not self.cfg.app.dry_run,
                 self.cfg.match.accept_types,
             )
         session = self._sessions[account_name]
