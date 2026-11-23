@@ -348,6 +348,7 @@ class SyncEngine:
                 result.failed += len(subject_numbers)
                 continue
             marks = session.marks(subject_id)
+            self._ensure_collection(user_cfg, session, subject_id, result)
 
             ep_from = int(mapping["ep_from"] or 1)
             watched_indices: set[int] = set()
@@ -551,6 +552,28 @@ class SyncEngine:
         log.warning("%s S%d: %s", series.title, series.season, message)
 
     # ------------------------------------------------------------ collection
+    def _ensure_collection(
+        self,
+        user_cfg: UserConfig,
+        session: _AccountSession,
+        subject_id: int,
+        result: UserResult,
+    ) -> None:
+        """Bangumi rejects episode marks for subjects not yet in the collection."""
+        if self.cfg.app.dry_run:
+            return
+        try:
+            if session.collection(subject_id) is not None:
+                return
+        except TrackerError:
+            return  # let the per-episode attempt surface the real error
+        try:
+            if session.set_collection(subject_id, DOING):
+                log.info("added subject %d to collection (watching) before marking episodes", subject_id)
+        except TrackerError as exc:
+            result.failed += 1
+            log.warning("could not add subject %d to collection: %s", subject_id, exc)
+
     def _update_collection(
         self,
         user_cfg: UserConfig,

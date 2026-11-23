@@ -63,6 +63,27 @@ def test_live_push_is_idempotent(tmp_path, fnos_db):
     store.close()
 
 
+def test_subject_is_added_before_marking_episodes(tmp_path, fnos_db):
+    cfg = make_config(fnos_db, str(tmp_path / "state.db"), dry_run=False)
+    fake = FakeTracker()
+    prepare_pharmacy(fake)
+    original = fake.mark_episode
+
+    def strict_mark(subject_id, episode_id, status=2):
+        # Bangumi rejects episode marks until the subject is in the collection.
+        if subject_id not in fake.collections:
+            raise TrackerError("you need to add subject to your collection first")
+        return original(subject_id, episode_id, status)
+
+    fake.mark_episode = strict_mark
+    engine, store = build_engine(cfg, fake)
+
+    result = engine.run()
+    assert result.pushed == 2
+    assert fake.collections[SUBJECT] in (DOING, COLLECTED)
+    store.close()
+
+
 def test_remote_marks_are_respected(tmp_path, fnos_db):
     cfg = make_config(fnos_db, str(tmp_path / "state.db"), dry_run=False, verify_remote=True)
     fake = FakeTracker()
