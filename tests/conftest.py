@@ -245,6 +245,7 @@ class FakeTracker(Tracker):
         self.collections: dict[int, int] = {}
         self.remote_marks: dict[int, dict[int, int]] = {}
         self.search_terms: list[str] = []
+        self.search_types: list[list[int]] = []
         self.auth_error: Exception | None = None
         self.fail_marks: Exception | None = None
 
@@ -252,8 +253,9 @@ class FakeTracker(Tracker):
         if self.auth_error:
             raise self.auth_error
 
-    def search(self, keyword: str, limit: int = 8) -> list[SubjectHit]:
+    def search(self, keyword: str, limit: int = 8, types: list[int] | None = None) -> list[SubjectHit]:
         self.search_terms.append(keyword)
+        self.search_types.append(list(types or []))
         return self.hits.get(keyword, [])
 
     def episodes(self, subject_id: int) -> list[TrackEpisode]:

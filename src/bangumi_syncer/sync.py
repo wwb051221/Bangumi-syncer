@@ -65,6 +65,7 @@ class RunResult:
     finished_at: int = 0
     ok: bool = True
     dry_run: bool = True
+    auth_error: bool = False
     users: list[UserResult] = field(default_factory=list)
     error: str | None = None
     duration_seconds: float = 0.0
@@ -110,6 +111,7 @@ class RunResult:
             "duration_seconds": round(self.duration_seconds, 2),
             "ok": self.ok,
             "dry_run": self.dry_run,
+            "auth_error": self.auth_error,
             "error": self.error,
             "pushed": self.pushed,
             "skipped": self.skipped,
@@ -123,9 +125,10 @@ class RunResult:
 class _AccountSession:
     """Per-account tracker plus run-scoped caches (episodes, marks, collection)."""
 
-    def __init__(self, tracker: Tracker, verify_remote: bool) -> None:
+    def __init__(self, tracker: Tracker, verify_remote: bool, search_types: list[int] | None = None) -> None:
         self.tracker = tracker
         self.verify_remote = verify_remote
+        self.search_types = list(search_types or [2])
         self._episodes: dict[int, list[TrackEpisode]] = {}
         self._marks: dict[int, dict[int, int]] = {}
         self._collection: dict[int, int | None] = {}
@@ -161,9 +164,9 @@ class _AccountSession:
         return True
 
     def search(self, term: str, limit: int) -> list:
-        key = "%s|%d" % (term, limit)
+        key = "%s|%d|%s" % (term, limit, ",".join(str(t) for t in self.search_types))
         if key not in self._search:
-            self._search[key] = self.tracker.search(term, limit)
+            self._search[key] = self.tracker.search(term, limit, self.search_types)
         return self._search[key]
 
 
@@ -193,7 +196,9 @@ class SyncEngine:
     def session(self, account_name: str) -> _AccountSession:
         if account_name not in self._sessions:
             self._sessions[account_name] = _AccountSession(
-                self._factory(account_name), self.cfg.sync.verify_remote
+                self._factory(account_name),
+                self.cfg.sync.verify_remote,
+                self.cfg.match.accept_types,
             )
         session = self._sessions[account_name]
         if account_name not in self._sessions_ready:
@@ -225,6 +230,7 @@ class SyncEngine:
                 self._run_user(user_cfg, snapshot, by_user, result)
         except AuthError as exc:
             result.ok = False
+            result.auth_error = True
             result.error = str(exc)
             log.error("authentication problem: %s", exc)
         except Exception as exc:  # noqa: BLE001 - one bad run must not kill the container

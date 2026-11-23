@@ -141,7 +141,7 @@ Exit codes: `0` ok, `1` run failed, `2` config error, `3` re-authorisation neede
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest        # 81 offline tests (synthetic fnOS DB + fake tracker)
+python -m pytest        # 103 offline tests (synthetic fnOS DB + fake tracker)
 ruff check src tests
 ```
 

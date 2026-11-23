@@ -180,6 +180,19 @@ def test_auth_error_is_reported(tmp_path, fnos_db):
     store.close()
 
 
+def test_search_types_follow_config(tmp_path, fnos_db):
+    cfg = make_config(fnos_db, str(tmp_path / "state.db"), dry_run=False)
+    cfg.match.accept_types = [2, 6]
+    fake = FakeTracker()
+    engine, store = build_engine(cfg, fake)
+
+    engine.run()
+
+    assert fake.search_types
+    assert all(types == [2, 6] for types in fake.search_types)
+    store.close()
+
+
 def test_users_without_finished_episodes_are_reported(tmp_path, fnos_db):
     cfg = make_config(fnos_db, str(tmp_path / "state.db"), dry_run=False)
     fake = FakeTracker()

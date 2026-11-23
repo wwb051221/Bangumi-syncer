@@ -67,7 +67,8 @@ class Tracker(ABC):
         """Validate credentials, refreshing tokens when needed."""
 
     @abstractmethod
-    def search(self, keyword: str, limit: int = 8) -> list[SubjectHit]: ...
+    def search(self, keyword: str, limit: int = 8, types: list[int] | None = None) -> list[SubjectHit]:
+        """Search subjects. ``types`` are Bangumi subject types (2 = anime)."""
 
     @abstractmethod
     def episodes(self, subject_id: int) -> list[TrackEpisode]: ...

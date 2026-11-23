@@ -153,7 +153,9 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
             if cfg.app.dry_run:
                 print("\n  dry_run=true: nothing was written to Bangumi."
                       " Set app.dry_run = false (or --no-dry-run) to go live.")
-            return EXIT_OK if result.ok else EXIT_FAIL
+            if result.ok:
+                return EXIT_OK
+            return EXIT_AUTH if result.auth_error else EXIT_FAIL
 
         interval = int(args.interval or cfg.sync.interval_seconds)
         log.info("sync loop started (interval %ds, dry_run=%s)", interval, cfg.app.dry_run)
@@ -165,7 +167,7 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
                 status_state.next_run_at = int(time.time()) + interval
             if not result.ok and result.error:
                 log.warning("run failed: %s", result.error)
-                if "oauth" in result.error.lower() or "token" in result.error.lower():
+                if result.auth_error:
                     log.warning("hint: bangumi-syncer oauth --account <name>")
             stop.wait(interval)
         log.info("sync loop stopped")
@@ -357,7 +359,7 @@ def cmd_search(cfg: Config, args: argparse.Namespace) -> int:
     try:
         account = _resolve_account(cfg, args)
         tracker = _make_tracker(cfg, store, account)
-        hits = tracker.search(args.keyword, args.limit)
+        hits = tracker.search(args.keyword, args.limit, cfg.match.accept_types)
     finally:
         store.close()
     if args.json:
@@ -475,13 +477,17 @@ def build_parser() -> argparse.ArgumentParser:
     review.set_defaults(func=cmd_review)
 
     mapping = subparsers.add_parser("map", help="inspect or fix season -> subject mappings")
-    mapping.add_argument("--account")
-    mapping.add_argument("--user")
     map_sub = mapping.add_subparsers(dest="action", metavar="action")
     map_sub.required = True
 
+    def _scope(parser: argparse.ArgumentParser) -> None:
+        """--account/--user are accepted after the action, e.g. `map add --account main`."""
+        parser.add_argument("--account")
+        parser.add_argument("--user")
+
     map_list = map_sub.add_parser("list", help="list mappings")
     map_list.add_argument("--json", action="store_true")
+    _scope(map_list)
     map_list.set_defaults(func=cmd_map)
 
     map_add = map_sub.add_parser("add", help="add or override a mapping")
@@ -490,11 +496,13 @@ def build_parser() -> argparse.ArgumentParser:
     map_add.add_argument("--from", dest="ep_from", type=int, default=1, help="first local episode (default 1)")
     map_add.add_argument("--to", dest="ep_to", type=int, default=9999, help="last local episode (default 9999)")
     map_add.add_argument("--name", help="subject name for display (fetched when omitted)")
+    _scope(map_add)
     map_add.set_defaults(func=cmd_map)
 
     map_remove = map_sub.add_parser("remove", help="remove a mapping")
     map_remove.add_argument("--series", required=True)
     map_remove.add_argument("--from", dest="ep_from", type=int, help="only this range start")
+    _scope(map_remove)
     map_remove.set_defaults(func=cmd_map)
 
     search = subparsers.add_parser("search", help="search Bangumi subjects by keyword")

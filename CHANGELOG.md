@@ -5,6 +5,19 @@
 
 ## [Unreleased]
 
+### 修复
+
+- `match.accept_types` 之前未生效（搜索硬编码为动画 type=2），现在会传给 Bangumi 搜索接口。
+- `map add/list/remove` 的 `--account` / `--user` 必须写在动作之前才生效（与 README 用法不符），
+  现在 `bangumi-syncer map add --account main ...` 可用。
+- 鉴权失败时 `run --once` 现在返回退出码 **3**（文档一直这么写，之前返回 1）。
+
+### 测试
+
+- 新增 17 个用例：CLI 端到端（`dump`/`status`/`map`/`review`/`run --once` 与退出码）、
+  Bangumi tracker 请求构造（类型过滤、分页、收藏 POST/PATCH、章节标记、404）、
+  `accept_types` 透传。共 103 个离线用例。
+
 ### 变更
 
 - 项目更名为 **Bangumi-syncer**：仓库/发行名 `bangumi-syncer`、Python 包 `bangumi_syncer`、

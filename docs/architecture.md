@@ -106,5 +106,9 @@ class JellyfinSource(SourceAdapter):
 * `tests/conftest.py` 用真实 schema 造一个**模拟飞牛库**（含直播、电影、电视剧、特别篇、
   合并季、旧播放记录等噪声）。
 * `FakeTracker` 在内存里实现 Tracker，断言推送的 `(subject, episode_id)` 序列。
+* `test_bangumi.py` 用脚本化的 HTTP 替身验证真实 tracker 的请求构造：搜索类型过滤、
+  章节分页、收藏 POST/PATCH、章节标记、404 语义。
+* `test_cli.py` 直接调 `cli.main([...])` 跑 `dump` / `status` / `map` / `review` / `run --once`，
+  验证退出码与输出（不联网）。
 * 覆盖：快照解析、过滤、比例判定、区间映射、幂等、远端核对、收藏完成、鉴权失败、限速重试。
-* 全部离线，`python -m pytest` 约 6 秒。
+* 全部离线（103 个用例，约 7 秒）。

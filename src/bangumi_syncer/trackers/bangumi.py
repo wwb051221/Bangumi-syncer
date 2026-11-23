@@ -162,8 +162,8 @@ class BangumiTracker(Tracker):
             raise
 
     # ----------------------------------------------------------------- calls
-    def search(self, keyword: str, limit: int = 8) -> list[SubjectHit]:
-        body = {"keyword": keyword, "filter": {"type": [2]}}
+    def search(self, keyword: str, limit: int = 8, types: list[int] | None = None) -> list[SubjectHit]:
+        body = {"keyword": keyword, "filter": {"type": types or [2]}}
         data = self._request(
             "POST", "/v0/search/subjects?limit=%d" % max(1, limit), json_body=body, auth_required=False
         )
