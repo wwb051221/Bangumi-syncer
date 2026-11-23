@@ -78,6 +78,19 @@
 * `POST /api/settings/reset` 恢复 `config.toml` 的值；
 * 深浅色三档、6 主题色、字号、密度通过 `?theme=` 与 localStorage 验证，首屏无闪白。
 
+### 外观与背景（服务端保存）
+
+在真实容器里用无头 Chrome 走完整交互：
+
+| 项 | 结果 |
+| --- | --- |
+| 上传背景 | 87 KB 渐变 PNG → `PUT /api/ui/background`，落盘 `data/state/assets/background.bin`，`GET /static/background` 返回 `image/png` |
+| 背景渲染 | `data-bg="image"`，层 `display:block`、`opacity:0.5`、`blur(6px)`、遮罩 0.5 |
+| 从背景取色 | canvas 取样得到 6 个莫兰迪色（`#b1a5b6` `#a5a9b6` `#a5aeb6` `#b6a5a5` `#b6ada5` `#b6a5af`），DOM 与服务器一致 |
+| 应用配色 | 点击色块 → `accent` 持久化为 `#b1a5b6`（写回服务器） |
+| 多设备同步 | 新开无痕上下文（无 localStorage）读到服务器主题 `light`；`PUT theme=dark` 后刷新即为 `dark` |
+| 响应式回归 | 开启背景后 17 个视口用例仍全部通过，0 横向溢出 |
+
 ## 6. 快照健壮性（实机发现）
 
 飞牛在 01:45 / 01:47 重写 `trimmedia.db` 时，只读 `VACUUM INTO` 会得到**合法但无表**的空库，

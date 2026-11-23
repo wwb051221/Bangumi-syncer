@@ -151,12 +151,19 @@ them. See [docs/api.md](docs/api.md). The SPA is plain JavaScript with **no buil
 
 ### Screenshots
 
-| Settings (light) | Overview (dark) |
+| Settings (light) | Settings (dark) |
 | --- | --- |
-| ![settings](docs/screenshots/settings-light.png) | ![overview](docs/screenshots/overview-dark.png) |
+| ![settings light](docs/screenshots/settings-light.png) | ![settings dark](docs/screenshots/settings-dark.png) |
 
-Light/dark/auto themes, six accent colours plus a custom picker, 85–125% font scale and a compact
-density are all persisted per browser. Responsive down to 320 px wide.
+Custom background with a Morandi accent extracted from it:
+
+| Dark | Light |
+| --- | --- |
+| ![custom background dark](docs/screenshots/settings-background-dark.png) | ![custom background light](docs/screenshots/overview-background-light.png) |
+
+Appearance is stored server-side, so every device shares it. Backgrounds can be uploaded, loaded
+from a URL or picked from four built-in gradient presets, with opacity/blur/scrim controls.
+Responsive down to 320 px wide.
 
 ## Commands
 

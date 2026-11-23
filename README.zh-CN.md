@@ -129,15 +129,23 @@ docker compose logs -f
 
 ### 界面预览
 
-| 设置页（浅色） | 概览（深色） |
+| 设置页（浅色） | 设置页（深色） |
 | --- | --- |
-| ![设置页浅色](docs/screenshots/settings-light.png) | ![概览深色](docs/screenshots/overview-dark.png) |
+| ![设置页浅色](docs/screenshots/settings-light.png) | ![设置页深色](docs/screenshots/settings-dark.png) |
+
+自定义背景 + 从背景提取的莫兰迪主题色：
+
+| 深色 · 设置页 | 浅色 · 概览 |
+| --- | --- |
+| ![自定义背景深色](docs/screenshots/settings-background-dark.png) | ![自定义背景浅色](docs/screenshots/overview-background-light.png) |
 
 手机端（390×844，深色）：
 
 <img src="docs/screenshots/mobile-settings-dark.png" width="320" alt="移动端设置页">
 
 主题支持「跟随系统 / 浅色 / 深色」，另有 6 种主题色 + 自定义取色、85%–125% 字号、舒适/紧凑密度。
+**外观与背景保存在服务器**，多设备共享；背景可上传、填 URL 或使用 4 个内置渐变预设，
+并可从背景提取莫兰迪低饱和配色。
 已在 **320 / 390 / 768 / 1024 / 1366 / 1920 / 2560** 宽度下逐档验证，均无横向溢出（见 [验证记录](docs/verification.md)）。
 
 前端是原生 JS 单页应用，**没有构建步骤**、没有 Node 依赖，静态资源随 Python 包一起分发。
