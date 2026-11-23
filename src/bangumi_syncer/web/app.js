@@ -989,10 +989,18 @@ function viewSettings() {
   html += '<div class="section"><h2>手动配置指引</h2><div class="card"><details class="guide">' +
     '<summary>展开 .env / CLI 授权步骤（可选，与上面的可视化授权等价）</summary>' +
     '<ol class="steps">' +
-    '<li>先登录 <a href="https://bgm.tv/login" target="_blank" rel="noreferrer">bgm.tv</a>，再打开 <a href="https://bgm.tv/dev/app" target="_blank" rel="noreferrer">bgm.tv/dev/app</a>（「我的应用」），点「创建应用」。</li>' +
-    '<li>回调地址（Redirect URI）填：<code>http://127.0.0.1:8765/oauth/callback</code>' +
-    '<button class="btn small" data-action="copy" data-copy="http://127.0.0.1:8765/oauth/callback">复制</button></li>' +
-    '<li>创建后复制 <strong>App ID</strong> 与 <strong>App Secret</strong>，写入与 <code>docker-compose.yml</code> 同目录的 <code>.env</code>：' +
+    '<li>先登录 <a href="https://bgm.tv/login" target="_blank" rel="noreferrer">bgm.tv</a>，再打开 <a href="https://bgm.tv/dev/app" target="_blank" rel="noreferrer">bgm.tv/dev/app</a>（「我的应用」），点「创建应用」，按下表填写：' +
+    '<ul class="guide-fields">' +
+    '<li>应用名：<code>Bangumi-syncer</code></li>' +
+    '<li>主页地址：<code>https://github.com/wwb051221/Bangumi-syncer</code></li>' +
+    '<li>类型：<strong>应用</strong>（不要选「组件」）</li>' +
+    '<li>简介：把飞牛影视的观看进度同步到 Bangumi</li>' +
+    '<li>跨域请求：<strong>不勾选</strong></li>' +
+    '</ul></li>' +
+    '<li>创建后进入应用设置，把回调地址（Redirect URI）填为：<code>http://127.0.0.1:8765/oauth/callback</code>' +
+    '<button class="btn small" data-action="copy" data-copy="http://127.0.0.1:8765/oauth/callback">复制</button>' +
+    '（必须与上面的回调地址完全一致），然后复制 <strong>App ID</strong> / <strong>App Secret</strong>。</li>' +
+    '<li>如果继续用命令行方式，把凭据写入与 <code>docker-compose.yml</code> 同目录的 <code>.env</code>：' +
     '<pre class="snippet"><code>BGM_CLIENT_ID=你的AppID\nBGM_CLIENT_SECRET=你的AppSecret</code>' +
     '<button class="btn small" data-action="copy" data-copy="BGM_CLIENT_ID=\nBGM_CLIENT_SECRET=">复制模板</button></pre></li>' +
     '<li>让容器读到新环境变量：<pre class="snippet"><code>docker compose up -d</code>' +

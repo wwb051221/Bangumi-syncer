@@ -510,6 +510,8 @@ pre.json {
 details.guide summary { cursor: pointer; color: var(--muted); font-size: .86rem; }
 details.guide[open] summary { margin-bottom: .6rem; }
 details.guide .steps { margin-top: .4rem; }
+.guide-fields { margin: .35rem 0 .2rem 1.1rem; padding: 0; color: var(--muted); font-size: .82rem; }
+.guide-fields li { margin: .18rem 0; }
 @media (max-width: 720px) {
   .oauth-status { margin-left: 0; }
 }

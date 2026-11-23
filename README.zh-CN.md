@@ -65,8 +65,19 @@ cp config.example.toml config.toml
 # echo 'BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim' > .env
 ```
 
-**1. 建一个 Bangumi 应用**：先登录 <https://bgm.tv>，打开 <https://bgm.tv/dev/app> → 「创建应用」，回调地址填
-`http://127.0.0.1:8765/oauth/callback`，记下 `App ID` / `App Secret`。
+**1. 建一个 Bangumi 应用**：先登录 <https://bgm.tv>，打开 <https://bgm.tv/dev/app> →「创建应用」，按下表填写：
+
+| 字段 | 值 |
+| --- | --- |
+| 应用名 | `Bangumi-syncer` |
+| 主页地址 | `https://github.com/wwb051221/Bangumi-syncer` |
+| 类型 | 应用（不要选「组件」） |
+| 简介 | 把飞牛影视的观看进度同步到 Bangumi |
+| 跨域请求 | 不勾选 |
+
+创建后进入应用设置，把**回调地址（Redirect URI）**填为
+`http://127.0.0.1:8765/oauth/callback`（必须完全一致），记下 `App ID` / `App Secret`。
+
 > 注意：`/dev/apps` 是失效地址（返回空白页，浏览器会黑屏），正确的是 `/dev/app`，且必须先登录。
 
 **2. 填配置**：编辑 `config.toml` 里的
