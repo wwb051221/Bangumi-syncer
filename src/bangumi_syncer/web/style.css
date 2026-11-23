@@ -477,6 +477,11 @@ pre.json {
   .review-actions .field input { width: 100%; }
   pre.logs { height: 50vh; }
   .footer { padding: .8rem 1rem 1.2rem; }
+  form.row { align-items: stretch; }
+  form.row > .field { flex: 1 1 100%; min-width: 0; }
+  form.row > .btn { width: 100%; }
+  form.row > .actions { width: 100%; }
+  .bg-options .row > .field { flex: 1 1 100%; width: auto; }
 }
 
 @media (max-width: 460px) {
