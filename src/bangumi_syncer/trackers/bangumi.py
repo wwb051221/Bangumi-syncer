@@ -268,9 +268,11 @@ class BangumiTracker(Tracker):
         return marks
 
     def mark_episode(self, subject_id: int, episode_id: int, status: int = EP_COLLECTED) -> None:
+        # Bangumi v0 updates a single episode mark via the account-wide path.
+        # The old /collections/{subject_id}/episodes/{episode_id} form returns 404.
         self._request(
             "PUT",
-            "/v0/users/-/collections/%d/episodes/%d" % (subject_id, episode_id),
+            "/v0/users/-/collections/-/episodes/%d" % episode_id,
             json_body={"type": int(status)},
         )
 

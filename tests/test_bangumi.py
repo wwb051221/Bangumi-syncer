@@ -84,7 +84,7 @@ def test_mark_episode(tmp_path):
     tracker.mark_episode(420628, 1244591)
     call = http.calls[0]
     assert call["method"] == "PUT"
-    assert call["url"].endswith("/v0/users/-/collections/420628/episodes/1244591")
+    assert call["url"].endswith("/v0/users/-/collections/-/episodes/1244591")
     assert call["json_body"] == {"type": EP_COLLECTED}
     assert call["headers"]["Authorization"] == "Bearer access"
     store.close()
