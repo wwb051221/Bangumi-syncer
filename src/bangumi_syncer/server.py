@@ -212,7 +212,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             if path in STATIC_FILES:
                 key, content_type = STATIC_FILES[path]
-                self._send_bytes(200, content_type, self.assets[key], cache_seconds=300)
+                # HTML/JS/CSS must never be stale after a restart; the
+                # background image keeps its cache because it is versioned.
+                cache = 0 if key in ("app.js", "style.css") else 300
+                self._send_bytes(200, content_type, self.assets[key], cache_seconds=cache)
                 return
             if path == "/favicon.ico":
                 self._send_bytes(204, "image/x-icon", b"")
