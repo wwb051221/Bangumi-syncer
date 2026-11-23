@@ -522,6 +522,33 @@ def test_admin_can_manage_members(open_server):
     assert member.get_json("api/status")[0] == 401  # deleted user's cookie is invalid
 
 
+def test_oauth_callback_exchanges_and_stores(server, monkeypatch):
+    client, instance, store = server
+    from bangumi_syncer import oauth
+
+    instance.oauth_states["state-1"] = {"account": "main", "expires": time.time() + 60}
+    monkeypatch.setattr(oauth, "exchange_code", lambda account, code, http: Tokens(
+        access_token="access", refresh_token="refresh", expires_at=int(time.time()) + 3600))
+    monkeypatch.setattr(oauth, "remote_user", lambda http, tokens: "tester")
+
+    status, body = client.get("oauth/callback?state=state-1&code=abc")
+    assert status == 200
+    assert "授权成功" in body.decode("utf-8")
+    tokens = store.tokens("main")
+    assert tokens is not None and tokens.access_token == "access"
+    assert tokens.remote_user == "tester"
+
+    # single use: replaying the same state fails
+    assert client.get("oauth/callback?state=state-1&code=abc")[0] == 400
+
+
+def test_oauth_callback_rejects_bad_state_without_login(open_server):
+    client, _instance, _store = open_server
+    status, body = client.get("oauth/callback?state=nope&code=x")
+    assert status == 400
+    assert "授权失败" in body.decode("utf-8")
+
+
 def test_build_status_without_runtime_state(tmp_path, fnos_db):
     cfg = make_config(fnos_db, str(tmp_path / "state.db"))
     store = StateStore(cfg.app.state_db)

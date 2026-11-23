@@ -506,6 +506,7 @@ pre.json {
   background: var(--panel-2); padding: .7rem; margin-top: .8rem;
 }
 .oauth-step[hidden] { display: none; }
+.oauth-warn { color: var(--warn); }
 .oauth-link-row input { font-size: .78rem; }
 details.guide summary { cursor: pointer; color: var(--muted); font-size: .86rem; }
 details.guide[open] summary { margin-bottom: .6rem; }

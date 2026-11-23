@@ -717,6 +717,9 @@ function viewOAuth() {
     name: currentName, client_id: '', has_secret: false, has_token: false, redirect_uri: '',
   };
   const url = state.oauthUrl || '';
+  const originCallback = window.location.origin + '/oauth/callback';
+  const loopback = /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(current.redirect_uri || '');
+  const callbackMismatch = (current.redirect_uri || '') !== originCallback;
   const expiry = current.has_token && current.expires_at
     ? '<span class="muted">到期 ' + esc(fmtTime(current.expires_at, state.status && state.status.timezone)) + '</span>'
     : '';
@@ -734,9 +737,16 @@ function viewOAuth() {
     (current.has_secret ? '已保存，留空不修改' : '粘贴 App Secret') + '"></label>' +
     '<label class="field">回调地址<input id="oauth-redirect" value="' + esc(current.redirect_uri || '') + '"></label>' +
     '</div>' +
+    (loopback
+      ? '<p class="hint oauth-warn">当前回调是 <code>127.0.0.1</code>：手机或其他设备打开会连接失败（它指向设备自身）。' +
+        '建议改成 <code>' + esc(originCallback) + '</code>，并同步修改 Bangumi 应用里的回调地址。' +
+        '<button class="btn small ghost" data-action="oauth-use-origin">使用当前地址</button></p>'
+      : '') +
     '<div class="row oauth-actions">' +
     '<button class="btn primary" data-action="oauth-save">保存配置</button>' +
     '<button class="btn" data-action="oauth-start">生成授权链接</button>' +
+    (callbackMismatch && !loopback
+      ? '<button class="btn small ghost" data-action="oauth-use-origin">使用当前地址</button>' : '') +
     '<span class="oauth-status">' + (current.has_token ? badge('已授权', 'ok') : badge('未授权', 'warn')) +
     expiry + remote + '</span></div>' +
     '<div class="oauth-step"' + (url ? '' : ' hidden') + '>' +
@@ -1899,6 +1909,13 @@ document.addEventListener('click', async (event) => {
     } catch (err) {
       toast('删除失败：' + err.message, 'err');
     }
+    return;
+  }
+
+  if (action === 'oauth-use-origin') {
+    const input = document.getElementById('oauth-redirect');
+    if (input) input.value = window.location.origin + '/oauth/callback';
+    toast('已填入当前地址；请同步修改 Bangumi 应用的回调地址后保存');
     return;
   }
 

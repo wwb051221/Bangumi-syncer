@@ -24,6 +24,7 @@ import time
 import urllib.parse
 from collections import deque
 from dataclasses import dataclass, field
+from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -193,7 +194,8 @@ class _Handler(BaseHTTPRequestHandler):
         self._user = self.auth.user_from_cookie(self.headers.get("Cookie"))
         setup_required = self.auth.setup_required()
         public_get = method == "GET" and (
-            path in ("/", "/index.html", "/favicon.ico", "/healthz", "/api/auth", "/static/background")
+            path in ("/", "/index.html", "/favicon.ico", "/healthz", "/api/auth", "/static/background",
+                     "/oauth/callback")
             or path in STATIC_FILES
         )
         public_post = method == "POST" and path in ("/api/auth/login", "/api/auth/setup", "/api/auth/logout")
@@ -216,6 +218,9 @@ class _Handler(BaseHTTPRequestHandler):
                 # background image keeps its cache because it is versioned.
                 cache = 0 if key in ("app.js", "style.css") else 300
                 self._send_bytes(200, content_type, self.assets[key], cache_seconds=cache)
+                return
+            if path == "/oauth/callback":
+                self._handle_oauth_callback(query)
                 return
             if path == "/favicon.ico":
                 self._send_bytes(204, "image/x-icon", b"")
@@ -663,7 +668,82 @@ class _Handler(BaseHTTPRequestHandler):
         if not account.client_id or not account.client_secret:
             raise HttpError(400, "请先填写并保存 App ID / App Secret")
         state = secrets.token_urlsafe(16)
-        self._send_json(200, {"ok": True, "url": oauth.authorize_url(account, state)})
+        now = time.time()
+        with self.oauth_lock:
+            expired = [key for key, value in self.oauth_states.items()
+                       if float(value.get("expires") or 0) <= now]
+            for key in expired:
+                self.oauth_states.pop(key, None)
+            self.oauth_states[state] = {"account": account.name, "expires": now + 900}
+        self._send_json(200, {"ok": True, "url": oauth.authorize_url(account, state), "state": state})
+
+    def _oauth_page(self, ok: bool, title: str, detail: str, account: str = "") -> str:
+        accent = "#22c55e" if ok else "#ef4444"
+        return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>%s</title><style>
+:root{color-scheme:light dark}
+body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+background:#f4f6f9;color:#1a2233;padding:2rem}
+@media (prefers-color-scheme:dark){body{background:#0f1115;color:#e6e8ee}}
+.card{max-width:34rem;width:100%%;border:1px solid rgba(128,128,128,.3);border-radius:1rem;padding:2rem;
+background:color-mix(in srgb,Canvas 92%%,transparent);box-shadow:0 20px 50px rgba(0,0,0,.18)}
+h1{font-size:1.25rem;margin:0 0 .6rem;color:%s}
+p{line-height:1.6;margin:.4rem 0;color:inherit;opacity:.85}
+a{display:inline-block;margin-top:1.2rem;padding:.5rem .9rem;border-radius:.55rem;background:%s;color:#fff;text-decoration:none}
+</style></head><body><div class="card"><h1>%s</h1><p>%s</p><p>%s</p>
+<a href="/">返回 Bangumi-syncer</a></div></body></html>""" % (
+            "授权成功" if ok else "授权失败",
+            accent,
+            accent,
+            "授权成功" if ok else "授权失败",
+            escape(detail),
+            ("账号：" + escape(account)) if account else "",
+        )
+
+    def _handle_oauth_callback(self, query: dict[str, list[str]]) -> None:
+        state = (query.get("state") or [""])[0]
+        code = (query.get("code") or [""])[0]
+        error = (query.get("error") or [""])[0]
+        with self.oauth_lock:
+            entry = self.oauth_states.pop(state, None)
+        if error:
+            body = self._oauth_page(False, "授权失败", "Bangumi 返回错误：%s" % error)
+            self._send_bytes(200, "text/html; charset=utf-8", body.encode("utf-8"))
+            return
+        if not entry or float(entry.get("expires") or 0) < time.time():
+            body = self._oauth_page(False, "授权失败", "授权状态已过期，请回到设置页重新生成授权链接。")
+            self._send_bytes(400, "text/html; charset=utf-8", body.encode("utf-8"))
+            return
+        if not code:
+            body = self._oauth_page(False, "授权失败", "回调里没有 code 参数。")
+            self._send_bytes(400, "text/html; charset=utf-8", body.encode("utf-8"))
+            return
+        account = self._oauth_account(entry.get("account"))
+        http = HttpClient(
+            user_agent=self.cfg.target.user_agent,
+            timeout=self.cfg.target.timeout_seconds,
+            max_retries=self.cfg.target.max_retries,
+            min_interval=0,
+        )
+        try:
+            tokens = oauth.exchange_code(account, code, http)
+            remote = oauth.remote_user(http, tokens)
+            if remote:
+                tokens.remote_user = remote
+            self.store.save_tokens(account.name, tokens)
+        except Exception as exc:  # noqa: BLE001 - shown on the callback page
+            log.warning("oauth callback failed for %r: %s", account.name, exc)
+            body = self._oauth_page(False, "授权失败", str(exc), account.name)
+            self._send_bytes(400, "text/html; charset=utf-8", body.encode("utf-8"))
+            return
+        log.info("oauth callback stored tokens for %r", account.name)
+        body = self._oauth_page(
+            True, "授权成功",
+            "令牌已保存，访问令牌约 7 天有效，程序会用 refresh token 自动续期。",
+            account.name,
+        )
+        self._send_bytes(200, "text/html; charset=utf-8", body.encode("utf-8"))
 
     def _handle_oauth_exchange(self) -> None:
         body = self._read_json()
@@ -838,6 +918,8 @@ class StatusServer:
         self.ui = ui
         self.auth = AuthManager(store)
         self._user: dict[str, Any] | None = None
+        self.oauth_states: dict[str, dict[str, Any]] = {}
+        self.oauth_lock = threading.Lock()
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._ring: _RingHandler | None = None
@@ -860,6 +942,8 @@ class StatusServer:
                 "settings": self.settings,
                 "ui": self.ui,
                 "auth": self.auth,
+                "oauth_states": self.oauth_states,
+                "oauth_lock": self.oauth_lock,
                 "assets": self._assets,
                 "searchers": {},
                 "search_lock": threading.Lock(),
