@@ -623,11 +623,14 @@ function treeNodeHtml(scope, node, selected) {
   const covered = pathCovered(node.path, selected);
   const explicit = selected.includes(node.path);
   const disabled = covered && !explicit;
+  const partial = !explicit && !covered &&
+    selected.some((chosen) => chosen.startsWith(node.path.replace(/\/+$/, '') + '/'));
   const children = (node.children || []).map((child) => treeNodeHtml(scope, child, selected)).join('');
   return '<div class="tree-node">' +
     '<label class="tree-row' + (disabled ? ' covered' : '') + '">' +
     '<input type="checkbox" data-action="toggle-path" data-scope="' + scope + '" data-path="' + esc(node.path) + '"' +
-    ((explicit || covered) ? ' checked' : '') + (disabled ? ' disabled' : '') + '>' +
+    ((explicit || covered) ? ' checked' : '') + (disabled ? ' disabled' : '') +
+    (partial ? ' data-partial="1"' : '') + '>' +
     '<span class="tree-main"><span class="tree-name">' + esc(node.name) + '</span>' +
     '<span class="tree-path">' + esc(node.path) + '</span></span>' +
     '<span class="tree-count">' + num(node.series) + ' 季 · ' + num(node.episodes) + ' 集</span>' +
@@ -669,6 +672,13 @@ function refreshPathPickers() {
   ['include', 'exclude'].forEach((scope) => {
     const holder = document.getElementById('picker-' + scope);
     if (holder) holder.innerHTML = pathPickerBody(scope);
+  });
+  syncPathIndeterminate();
+}
+
+function syncPathIndeterminate() {
+  document.querySelectorAll('.tree-row input[data-partial="1"]').forEach((input) => {
+    input.indeterminate = true;
   });
 }
 
@@ -1480,6 +1490,7 @@ function render() {
   document.getElementById('app').innerHTML = (views[state.tab] || viewOverview)();
   updateLayoutFlag();
   syncAppearanceControls();
+  syncPathIndeterminate();
   if (state.tab === 'logs') refreshLogs();
 }
 
