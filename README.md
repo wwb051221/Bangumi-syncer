@@ -37,7 +37,8 @@ position/runtime ratio is the primary "finished" signal (`sync.watch_ratio`, def
   `bangumi-syncer map add`).
 - **Merged seasons** — map local episodes 25–48 to a second Bangumi subject with `--from/--to`.
 - **Schema-drift tolerant** — required columns are probed, and the SQL can be overridden in config.
-- **Zero runtime dependencies** — stdlib only, ~55 MB image.
+- **Zero runtime dependencies** — stdlib only, ~120 MB image (the python:slim base
+  accounts for almost all of it).
 
 ## Quick start
 

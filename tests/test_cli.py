@@ -86,6 +86,31 @@ def test_map_add_list_remove(tmp_path, fnos_db, capsys):
     assert json.loads(capsys.readouterr().out) == []
 
 
+def test_map_remove_range_only_clears_that_range(tmp_path, fnos_db, capsys):
+    config = write_config(tmp_path, fnos_db)
+    store = StateStore(str(tmp_path / "state.db"))
+    store.save_mapping("main", "fnos:tv1:s1", subject_id=420628, subject_name="a",
+                       strategy="manual", ep_from=1, ep_to=24, confirmed=True)
+    store.save_mapping("main", "fnos:tv1:s1", subject_id=486347, subject_name="b",
+                       strategy="manual", ep_from=25, ep_to=48, confirmed=True)
+    for episode in (1, 2, 30):
+        store.record_push("main", "fnos:tv1:s1", episode, "sent")
+    store.close()
+
+    assert cli.main([
+        "--config", config, "map", "remove",
+        "--account", "main", "--series", "fnos:tv1:s1", "--from", "25",
+    ]) == 0
+    capsys.readouterr()
+
+    store = StateStore(str(tmp_path / "state.db"))
+    try:
+        assert [row["ep_from"] for row in store.mapping_groups("main", "fnos:tv1:s1")] == [1]
+        assert {row["episode"] for row in store.pushes("main")} == {1, 2}
+    finally:
+        store.close()
+
+
 def test_review_lists_candidates(tmp_path, fnos_db, capsys):
     config = write_config(tmp_path, fnos_db)
     store = StateStore(str(tmp_path / "state.db"))

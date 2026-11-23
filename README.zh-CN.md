@@ -6,7 +6,7 @@
 [![CI](https://github.com/wwb051221/Bangumi-syncer/actions/workflows/ci.yml/badge.svg)](https://github.com/wwb051221/Bangumi-syncer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
-[![Image size](https://img.shields.io/badge/image-~55MB-informational.svg)](#docker)
+[![Image size](https://img.shields.io/badge/image-~120MB-informational.svg)](#docker)
 
 **English**: [README.md](README.md) · **设计文档**: [架构](docs/architecture.md) · [匹配算法](docs/mapping.md) · [飞牛数据库结构](docs/schema.md)
 
@@ -41,7 +41,7 @@
 | **可复核** | 匹配置信度不足时不猜，塞进复核队列，用 `review` / `map add` 一键确认 |
 | **合并季支持** | 一季文件夹里塞了 55 集（多个 Bangumi 条目）时，用区间映射拆成 3 段 |
 | **抗 schema 变化** | 自动探测必备列，缺列时给出明确报错；SQL 可在配置里替换，无需改代码 |
-| **零依赖** | 只用 Python 标准库，镜像 ~55 MB，内存占用 < 30 MB |
+| **零依赖** | 只用 Python 标准库，镜像约 120 MB（几乎全是 `python:slim` 基础层），内存占用 < 30 MB |
 | **可观测** | JSON 日志、`/healthz`、`/api/status`、只读状态页 |
 
 ## 实测环境

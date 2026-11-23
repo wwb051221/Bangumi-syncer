@@ -344,9 +344,24 @@ def cmd_map(cfg: Config, args: argparse.Namespace) -> int:
             return EXIT_OK
 
         if args.action == "remove":
+            # Resolve the affected range *before* deleting the mapping row.
+            target = None
+            if args.ep_from is not None:
+                for row in store.mapping_groups(account, args.series):
+                    if row["ep_from"] == args.ep_from:
+                        target = row
+                        break
             removed = store.delete_mapping(account, args.series, args.ep_from)
-            store.delete_pushes(account, args.series)
-            print("removed %d mapping(s) for %s" % (removed, args.series))
+            if target is not None:
+                cleared = store.delete_pushes(
+                    account, args.series, int(target["ep_from"]), int(target["ep_to"])
+                )
+            elif args.ep_from is None:
+                cleared = store.delete_pushes(account, args.series)
+            else:
+                cleared = 0
+            print("removed %d mapping(s) for %s; cleared %d push record(s)"
+                  % (removed, args.series, cleared))
             return EXIT_OK
 
         raise ConfigError("unknown map action %r" % args.action)
