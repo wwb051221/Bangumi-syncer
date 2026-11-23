@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 import threading
 import time
 import urllib.parse
@@ -26,9 +27,11 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from . import __version__, trackers
+from . import __version__, oauth, trackers
 from .config import Config
+from .http import HttpClient
 from .log import get_logger
+from .oauth import OAuthError
 from .settings import SettingsError, SettingsManager
 from .state import StateStore
 from .sync import RunResult
@@ -218,6 +221,9 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/api/source-users":
                 self._handle_source_users(query)
                 return
+            if path == "/api/oauth":
+                self._send_json(200, self._oauth_status())
+                return
             if path == "/api/ui":
                 self._handle_ui_get()
                 return
@@ -235,6 +241,15 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if method == "PUT" and path == "/api/settings":
             self._handle_settings_update()
+            return
+        if method == "PUT" and path == "/api/oauth":
+            self._handle_oauth_update()
+            return
+        if method == "POST" and path == "/api/oauth/start":
+            self._handle_oauth_start()
+            return
+        if method == "POST" and path == "/api/oauth/exchange":
+            self._handle_oauth_exchange()
             return
         if method == "POST" and path == "/api/settings/reset":
             self._handle_settings_reset()
@@ -437,6 +452,86 @@ class _Handler(BaseHTTPRequestHandler):
     def _handle_settings_reset(self) -> None:
         manager = self._settings_manager()
         self._send_json(200, {"ok": True, "values": manager.reset(), "accounts": manager.accounts})
+
+    # ------------------------------------------------------------------ oauth
+    def _oauth_account(self, name: object):
+        accounts = self.cfg.target.accounts
+        if not accounts:
+            raise HttpError(400, "没有配置 Bangumi 账号")
+        wanted = str(name or accounts[0].name)
+        for account in accounts:
+            if account.name == wanted:
+                return account
+        raise HttpError(400, "未知账号：%s" % wanted)
+
+    def _oauth_status(self) -> dict[str, Any]:
+        accounts = []
+        for account in self.cfg.target.accounts:
+            saved = oauth.stored_client(self.store, account.name)
+            tokens = self.store.tokens(account.name)
+            accounts.append({
+                "name": account.name,
+                "client_id": saved.get("client_id") or account.client_id,
+                "has_secret": bool(saved.get("client_secret") or account.client_secret),
+                "redirect_uri": saved.get("redirect_uri") or account.redirect_uri,
+                "has_token": bool(tokens),
+                "expires_at": tokens.expires_at if tokens else None,
+                "remote_user": tokens.remote_user if tokens else None,
+            })
+        return {"accounts": accounts}
+
+    def _handle_oauth_update(self) -> None:
+        body = self._read_json()
+        account = self._oauth_account(body.get("account"))
+        client_id = str(body.get("client_id") or "").strip()
+        redirect_uri = str(body.get("redirect_uri") or "").strip()
+        secret = body.get("client_secret")
+        secret = str(secret).strip() if isinstance(secret, str) else ""
+        if not client_id:
+            raise HttpError(400, "App ID 不能为空")
+        if redirect_uri and not redirect_uri.startswith(("http://", "https://")):
+            raise HttpError(400, "回调地址必须是 http(s) URL")
+        oauth.save_client(
+            self.store,
+            account.name,
+            client_id=client_id,
+            client_secret=secret or None,
+            redirect_uri=redirect_uri or None,
+        )
+        oauth.apply_stored_credentials(self.cfg, self.store)
+        log.info("oauth app credentials updated for %r", account.name)
+        self._send_json(200, {"ok": True, "oauth": self._oauth_status()})
+
+    def _handle_oauth_start(self) -> None:
+        body = self._read_json()
+        account = self._oauth_account(body.get("account"))
+        if not account.client_id or not account.client_secret:
+            raise HttpError(400, "请先填写并保存 App ID / App Secret")
+        state = secrets.token_urlsafe(16)
+        self._send_json(200, {"ok": True, "url": oauth.authorize_url(account, state)})
+
+    def _handle_oauth_exchange(self) -> None:
+        body = self._read_json()
+        account = self._oauth_account(body.get("account"))
+        code = oauth.extract_code(str(body.get("code") or ""))
+        if not code:
+            raise HttpError(400, "请粘贴回调地址或 code")
+        http = HttpClient(
+            user_agent=self.cfg.target.user_agent,
+            timeout=self.cfg.target.timeout_seconds,
+            max_retries=self.cfg.target.max_retries,
+            min_interval=0,
+        )
+        try:
+            tokens = oauth.exchange_code(account, code, http)
+        except OAuthError as exc:
+            raise HttpError(400, str(exc)) from exc
+        remote = oauth.remote_user(http, tokens)
+        if remote:
+            tokens.remote_user = remote
+        self.store.save_tokens(account.name, tokens)
+        log.info("oauth tokens stored for %r", account.name)
+        self._send_json(200, {"ok": True, "oauth": self._oauth_status()})
 
     # ------------------------------------------------------------- appearance
     def _ui_manager(self) -> UiManager:

@@ -13,7 +13,7 @@ from conftest import make_config
 from bangumi_syncer.config import ServerConfig
 from bangumi_syncer.server import StatusServer, StatusState, build_status
 from bangumi_syncer.settings import SettingsManager
-from bangumi_syncer.state import StateStore
+from bangumi_syncer.state import StateStore, Tokens
 from bangumi_syncer.ui import UiManager
 
 HEADER = {"X-Requested-With": "bangumi-syncer"}
@@ -338,6 +338,79 @@ def test_background_preset(server):
     assert payload["ui"]["background"]["mode"] == "preset"
     assert payload["ui"]["background"]["preset"] == "dusk"
     status, payload = client.send("PUT", "api/ui/background", {"preset": "nope"})
+    assert status == 400
+
+
+def test_oauth_config_roundtrip(server):
+    client, _instance, _store = server
+    status, payload = client.get_json("api/oauth")
+    assert status == 200
+    account = payload["accounts"][0]
+    assert account["name"] == "main"
+    assert "has_secret" in account and "client_secret" not in account
+
+    assert client.send("PUT", "api/oauth", {"client_id": "123"}, header=False)[0] == 403
+    status, payload = client.send("PUT", "api/oauth", {
+        "account": "main",
+        "client_id": "12345",
+        "client_secret": "top-secret",
+        "redirect_uri": "http://127.0.0.1:8765/oauth/callback",
+    })
+    assert status == 200
+    account = payload["oauth"]["accounts"][0]
+    assert account["client_id"] == "12345"
+    assert account["has_secret"] is True
+    assert "top-secret" not in json.dumps(payload)
+
+    status, payload = client.get_json("api/oauth")
+    assert payload["accounts"][0]["client_id"] == "12345"
+
+    status, payload = client.send("PUT", "api/oauth", {"account": "main", "redirect_uri": "ftp://x"})
+    assert status == 400
+
+
+def test_oauth_start_needs_credentials(server):
+    client, instance, _store = server
+    account = instance.cfg.account("main")
+    account.client_id = ""
+    account.client_secret = ""
+    status, payload = client.send("POST", "api/oauth/start", {"account": "main"})
+    assert status == 400
+    assert "App ID" in payload["error"]
+
+    client.send("PUT", "api/oauth", {"client_id": "12345", "client_secret": "s",
+                                     "redirect_uri": "http://127.0.0.1:8765/oauth/callback"})
+    status, payload = client.send("POST", "api/oauth/start", {"account": "main"})
+    assert status == 200
+    assert "client_id=12345" in payload["url"]
+    assert payload["url"].startswith("https://bgm.tv/oauth/authorize?")
+
+
+def test_oauth_exchange_stores_tokens(server, monkeypatch):
+    client, _instance, store = server
+    from bangumi_syncer import oauth
+
+    client.send("PUT", "api/oauth", {"client_id": "12345", "client_secret": "s"})
+
+    def fake_exchange(account, code, http):
+        assert code == "the-code"
+        return Tokens(access_token="access", refresh_token="refresh", expires_at=int(time.time()) + 3600)
+
+    monkeypatch.setattr(oauth, "exchange_code", fake_exchange)
+    monkeypatch.setattr(oauth, "remote_user", lambda http, tokens: "tester")
+
+    status, payload = client.send("POST", "api/oauth/exchange", {
+        "account": "main",
+        "code": "http://127.0.0.1:8765/oauth/callback?code=the-code&state=x",
+    })
+    assert status == 200
+    account = payload["oauth"]["accounts"][0]
+    assert account["has_token"] is True
+    assert account["remote_user"] == "tester"
+    tokens = store.tokens("main")
+    assert tokens is not None and tokens.access_token == "access"
+
+    status, payload = client.send("POST", "api/oauth/exchange", {"account": "main", "code": ""})
     assert status == 400
 
 

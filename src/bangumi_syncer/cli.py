@@ -111,12 +111,14 @@ def _resolve_account(cfg: Config, args: argparse.Namespace) -> str:
 
 
 def _make_tracker(cfg: Config, store: StateStore, account_name: str):
+    oauth.apply_stored_credentials(cfg, store)
     return trackers.create(cfg.account(account_name), cfg.target, store)
 
 
 # ------------------------------------------------------------------- commands
 def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
     store = StateStore(cfg.app.state_db)
+    oauth.apply_stored_credentials(cfg, store)
     settings_manager = SettingsManager(cfg, store)
     ui_manager = UiManager(store, os.path.dirname(os.path.abspath(cfg.app.state_db)),
                            user_agent=cfg.target.user_agent)
@@ -197,9 +199,10 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
 
 
 def cmd_oauth(cfg: Config, args: argparse.Namespace) -> int:
-    account = cfg.account(args.account)
     store = StateStore(cfg.app.state_db)
     try:
+        oauth.apply_stored_credentials(cfg, store)
+        account = cfg.account(args.account)
         oauth.login(
             account,
             store,

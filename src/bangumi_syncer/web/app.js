@@ -31,6 +31,9 @@ const state = {
   userRows: [],
   includePaths: [],
   excludePaths: [],
+  oauth: null,
+  oauthAccount: '',
+  oauthUrl: '',
   ui: { ...UI_DEFAULT },
   uiRev: -1,
   themeOverride: new URLSearchParams(location.search).get('theme') || '',
@@ -573,7 +576,8 @@ function viewAccounts() {
   const status = state.status;
   const accounts = status.accounts || [];
   let html = '<section class="section"><h2>Bangumi 账号</h2>' +
-    '<p class="muted">令牌保存在状态库里，有效期约 7 天，程序会自动刷新。首次使用或授权被撤销后，在容器里执行下面的命令。</p>' +
+    '<p class="muted">令牌保存在状态库里，有效期约 7 天，程序会自动刷新。' +
+    '推荐直接在「设置 → Bangumi 授权」里填写凭据并完成授权；下面的命令用于命令行方式。</p>' +
     '<div class="table-wrap"><table><thead><tr><th>账号</th><th>令牌</th><th class="hide-sm">过期时间</th><th>Bangumi 用户</th><th>授权命令</th></tr></thead><tbody>';
   for (const account of accounts) {
     const command = 'docker compose run --rm bangumi-syncer oauth --account ' + account.name + ' --manual';
@@ -585,7 +589,7 @@ function viewAccounts() {
       '<button class="btn small" data-action="copy" data-copy="' + esc(command) + '">复制</button></td></tr>';
   }
   if (!accounts.length) {
-    html += '<tr><td colspan="5" class="empty">还没有授权过，见「设置 → Bangumi API 获取指引」</td></tr>';
+    html += '<tr><td colspan="5" class="empty">还没有授权过，去「设置 → Bangumi 授权」完成授权</td></tr>';
   }
   html += '</tbody></table></div></section>';
 
@@ -680,6 +684,56 @@ function syncPathIndeterminate() {
   document.querySelectorAll('.tree-row input[data-partial="1"]').forEach((input) => {
     input.indeterminate = true;
   });
+}
+
+/* ------------------------------------------------------------------- oauth */
+function viewOAuth() {
+  const accounts = (state.oauth && state.oauth.accounts) || [];
+  const names = accounts.map((account) => account.name);
+  const currentName = state.oauthAccount || names[0] || '';
+  const current = accounts.find((account) => account.name === currentName) || {
+    name: currentName, client_id: '', has_secret: false, has_token: false, redirect_uri: '',
+  };
+  const url = state.oauthUrl || '';
+  const expiry = current.has_token && current.expires_at
+    ? '<span class="muted">到期 ' + esc(fmtTime(current.expires_at, state.status && state.status.timezone)) + '</span>'
+    : '';
+  const remote = current.remote_user
+    ? '<span class="muted">Bangumi：' + esc(current.remote_user) + '</span>' : '';
+  return '<div class="section" id="oauth-section"><h2>Bangumi 授权</h2><div class="card">' +
+    '<p class="hint" style="margin-top:0">在 <a href="https://bgm.tv/dev/apps" target="_blank" rel="noreferrer">bgm.tv/dev/apps</a> ' +
+    '创建应用后，把 App ID / Secret 填在这里；点「生成授权链接」完成授权，再把回调地址或 code 粘回来即可，' +
+    '<strong>不需要 SSH 或修改 .env</strong>。</p>' +
+    '<div class="form-grid">' +
+    '<label class="field">账号' + (names.length ? customSelect('oauth-account', names, currentName) : '<span class="muted">没有账号</span>') + '</label>' +
+    '<label class="field">App ID<input id="oauth-client-id" autocomplete="off" value="' + esc(current.client_id || '') + '"></label>' +
+    '<label class="field">App Secret<input id="oauth-secret" type="password" autocomplete="new-password" placeholder="' +
+    (current.has_secret ? '已保存，留空不修改' : '粘贴 App Secret') + '"></label>' +
+    '<label class="field">回调地址<input id="oauth-redirect" value="' + esc(current.redirect_uri || '') + '"></label>' +
+    '</div>' +
+    '<div class="row oauth-actions">' +
+    '<button class="btn primary" data-action="oauth-save">保存配置</button>' +
+    '<button class="btn" data-action="oauth-start">生成授权链接</button>' +
+    '<span class="oauth-status">' + (current.has_token ? badge('已授权', 'ok') : badge('未授权', 'warn')) +
+    expiry + remote + '</span></div>' +
+    '<div class="oauth-step"' + (url ? '' : ' hidden') + '>' +
+    '<p class="hint" style="margin-top:0">1) 打开下面的链接并在 Bangumi 授权：</p>' +
+    '<div class="row oauth-link-row"><input id="oauth-url" readonly value="' + esc(url) + '">' +
+    '<button class="btn small" data-action="copy" data-copy="' + esc(url) + '">复制</button>' +
+    (url ? '<a class="btn small" href="' + esc(url) + '" target="_blank" rel="noreferrer">打开</a>' : '') +
+    '</div>' +
+    '<p class="hint">2) 授权后浏览器会跳到回调地址（可能打不开），复制地址栏整段 URL 或其中的 code：</p>' +
+    '<div class="row"><input id="oauth-code" placeholder="粘贴回调地址或 code">' +
+    '<button class="btn primary" data-action="oauth-exchange">完成授权</button></div>' +
+    '<p class="hint">' + (current.has_secret
+      ? '回调地址必须与 Bangumi 应用里登记的一致。'
+      : '请先保存 App Secret 再生成授权链接。') + '</p>' +
+    '</div></div></div>';
+}
+
+function refreshOAuthSection() {
+  const holder = document.getElementById('oauth-section');
+  if (holder) holder.outerHTML = viewOAuth();
 }
 
 /* ---------------------------------------------------------------- settings */
@@ -821,7 +875,10 @@ function viewSettings() {
     '</div>' +
     '</div></div>';
 
-  html += '<div class="section"><h2>Bangumi API 获取指引</h2><div class="card">' +
+  html += viewOAuth();
+
+  html += '<div class="section"><h2>手动配置指引</h2><div class="card"><details class="guide">' +
+    '<summary>展开 .env / CLI 授权步骤（可选，与上面的可视化授权等价）</summary>' +
     '<ol class="steps">' +
     '<li>打开 <a href="https://bgm.tv/dev/apps" target="_blank" rel="noreferrer">bgm.tv/dev/apps</a>，登录后点「创建新应用」。</li>' +
     '<li>回调地址（Redirect URI）填：<code>http://127.0.0.1:8765/oauth/callback</code>' +
@@ -836,8 +893,9 @@ function viewSettings() {
     '<button class="btn small" data-action="copy" data-copy="docker compose run --rm bangumi-syncer oauth --account main --manual">复制</button></pre></li>' +
     '<li>刷新本页，「账号」页应显示「已保存」。访问令牌约 7 天有效，程序会用 refresh token 自动续期。</li>' +
     '</ol><p class="hint">回调地址必须与创建应用时填写的一致；如果应用已存在，可在其设置里修改。' +
-    '不要把 App Secret 提交到公开仓库（<code>.env</code> 已被 <code>.gitignore</code> 忽略）。</p>' +
-    '</div></div>';
+    '不要把 App Secret 提交到公开仓库（<code>.env</code> 已被 <code>.gitignore</code> 忽略）。' +
+    '网页里填写的凭据保存在状态库，重启后仍然有效。</p>' +
+    '</details></div></div>';
 
   html += '<div class="actions settings-actions" id="settings-actions">' +
     '<button class="btn primary" data-action="save-settings">保存设置</button>' +
@@ -917,9 +975,20 @@ async function loadSettings() {
   state.settingsError = '';
   if (state.tab === 'settings') render();
   try {
-    state.settings = await apiGet('/api/settings');
+    const [settings, oauthStatus] = await Promise.all([
+      apiGet('/api/settings'),
+      apiGet('/api/oauth').catch(() => null),
+    ]);
+    state.settings = settings;
     state.includePaths = [...(state.settings.values.include_paths || [])];
     state.excludePaths = [...(state.settings.values.exclude_paths || [])];
+    if (oauthStatus) {
+      state.oauth = oauthStatus;
+      const names = (oauthStatus.accounts || []).map((account) => account.name);
+      if (!state.oauthAccount || !names.includes(state.oauthAccount)) {
+        state.oauthAccount = names[0] || '';
+      }
+    }
     buildUserRows();
   } catch (err) {
     state.settingsError = err.message;
@@ -1651,6 +1720,57 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (action === 'oauth-save') {
+    const account = (document.getElementById('oauth-account') || {}).value;
+    const clientId = (document.getElementById('oauth-client-id') || {}).value || '';
+    const secret = (document.getElementById('oauth-secret') || {}).value || '';
+    const redirect = (document.getElementById('oauth-redirect') || {}).value || '';
+    try {
+      const data = await apiSend('PUT', '/api/oauth', {
+        account,
+        client_id: clientId.trim(),
+        client_secret: secret,
+        redirect_uri: redirect.trim(),
+      });
+      state.oauth = data.oauth;
+      state.oauthUrl = '';
+      refreshOAuthSection();
+      toast('授权配置已保存', 'ok');
+    } catch (err) {
+      toast('保存失败：' + err.message, 'err');
+    }
+    return;
+  }
+
+  if (action === 'oauth-start') {
+    const account = (document.getElementById('oauth-account') || {}).value;
+    try {
+      const data = await apiSend('POST', '/api/oauth/start', { account });
+      state.oauthUrl = data.url;
+      refreshOAuthSection();
+      toast('授权链接已生成，打开链接完成授权');
+    } catch (err) {
+      toast('生成链接失败：' + err.message, 'err');
+    }
+    return;
+  }
+
+  if (action === 'oauth-exchange') {
+    const account = (document.getElementById('oauth-account') || {}).value;
+    const code = (document.getElementById('oauth-code') || {}).value || '';
+    try {
+      const data = await apiSend('POST', '/api/oauth/exchange', { account, code });
+      state.oauth = data.oauth;
+      state.oauthUrl = '';
+      refreshOAuthSection();
+      refresh();
+      toast('授权完成，令牌已保存', 'ok');
+    } catch (err) {
+      toast('授权失败：' + err.message, 'err');
+    }
+    return;
+  }
+
   if (action === 'bg-recrop') {
     await openCropCurrent();
     return;
@@ -1754,6 +1874,13 @@ document.addEventListener('change', (event) => {
   if (target.id === 'bg-file') {
     openCropFromFile(target.files && target.files[0]);
     if (target.value) target.value = '';
+    return;
+  }
+
+  if (target.id === 'oauth-account') {
+    state.oauthAccount = target.value;
+    state.oauthUrl = '';
+    refreshOAuthSection();
     return;
   }
 

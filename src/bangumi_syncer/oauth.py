@@ -23,7 +23,7 @@ import webbrowser
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from .config import AccountConfig, TargetConfig
+from .config import AccountConfig, Config, TargetConfig
 from .http import ApiError, HttpClient
 from .log import get_logger
 from .state import StateStore, Tokens
@@ -33,6 +33,7 @@ log = get_logger("oauth")
 AUTHORIZE_URL = "https://bgm.tv/oauth/authorize"
 TOKEN_URL = "https://bgm.tv/oauth/access_token"
 DEFAULT_PORT = 8765
+CLIENTS_KEY = "oauth_clients"
 
 _SUCCESS_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Bangumi-syncer</title></head>
 <body style="font-family:system-ui,sans-serif;padding:3rem;max-width:38rem;margin:auto">
@@ -60,6 +61,72 @@ def authorize_url(account: AccountConfig, state: str) -> str:
         "state": state,
     }
     return AUTHORIZE_URL + "?" + urllib.parse.urlencode(params)
+
+
+# ------------------------------------------------------- runtime credentials
+def stored_clients(store: StateStore) -> dict[str, dict[str, str]]:
+    data = store.get_json(CLIENTS_KEY)
+    return data if isinstance(data, dict) else {}
+
+
+def stored_client(store: StateStore, account: str) -> dict[str, str]:
+    saved = stored_clients(store).get(account)
+    return dict(saved) if isinstance(saved, dict) else {}
+
+
+def save_client(
+    store: StateStore,
+    account: str,
+    *,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+    redirect_uri: str | None = None,
+) -> dict[str, str]:
+    """Persist the OAuth app credentials entered in the web UI.
+
+    A blank ``client_secret`` keeps the currently stored one, so the UI can
+    leave the password field empty after it has been saved once.
+    """
+    clients = stored_clients(store)
+    current = dict(clients.get(account) or {})
+    if client_id is not None:
+        current["client_id"] = client_id.strip()
+    if redirect_uri is not None:
+        current["redirect_uri"] = redirect_uri.strip()
+    if client_secret:
+        current["client_secret"] = client_secret
+    clients[account] = current
+    store.set_json(CLIENTS_KEY, clients)
+    return current
+
+
+def apply_stored_credentials(cfg: Config, store: StateStore) -> None:
+    """Overlay credentials saved through the web UI onto the live config."""
+    clients = stored_clients(store)
+    for account in cfg.target.accounts:
+        saved = clients.get(account.name)
+        if not isinstance(saved, dict):
+            continue
+        if saved.get("client_id"):
+            account.client_id = str(saved["client_id"])
+        if saved.get("client_secret"):
+            account.client_secret = str(saved["client_secret"])
+        if saved.get("redirect_uri"):
+            account.redirect_uri = str(saved["redirect_uri"])
+
+
+def extract_code(value: str) -> str:
+    """Accept a bare code or the whole redirect URL pasted from the browser."""
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if "code=" in text:
+        query = urllib.parse.urlparse(text).query if "?" in text else text
+        params = urllib.parse.parse_qs(query.lstrip("?"))
+        codes = params.get("code") or []
+        if codes:
+            return codes[0].strip()
+    return text
 
 
 def exchange_code(account: AccountConfig, code: str, http: HttpClient) -> Tokens:
@@ -224,3 +291,7 @@ def _remote_user(http: HttpClient, tokens: Tokens) -> str | None:
     except ApiError as exc:
         log.debug("could not read /v0/me: %s", exc)
     return None
+
+
+def remote_user(http: HttpClient, tokens: Tokens) -> str | None:
+    return _remote_user(http, tokens)
