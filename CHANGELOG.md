@@ -30,6 +30,12 @@
 
 ### 修复
 
+- **Android Firefox 深色下下拉选项不可见**：原生 `<select>` 弹层由系统绘制（白底），文字继承浅色
+  导致几乎不可读。改为自绘下拉组件（按钮 + 列表 + 隐藏 input，保持原 id/value 接口），
+  弹层挂到 `<body>` 并用 `fixed` 定位，避免表格容器的 `overflow`/`backdrop-filter` 裁剪；
+  支持点外部/Esc/滚动关闭，选项带 `role` 与 `aria-selected`。
+- **移动端表单过窄**：≤720px 时表单字段与按钮改为整行排布。
+
 - **UI 圆角不统一 / 表格圆角不生效**：引入 `--radius-xs/sm/md/lg/xl/pill` 六档 token（密度切换时同步缩放），
   卡片、弹窗、输入框、按钮、分段控件、预览、代码块、Toast 全部改用 token；表格圆角改由
   `.table-wrap` 承担（`border-collapse` 下 `table` 的 `border-radius` 无效），并去掉 table 自身边框，

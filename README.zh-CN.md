@@ -145,6 +145,10 @@ docker compose logs -f
 
 <img src="docs/screenshots/mobile-settings-dark.png" width="320" alt="移动端设置页">
 
+移动端下拉在深色下使用自绘弹层（不再出现系统白底、文字不可见）：
+
+<img src="docs/screenshots/mobile-select-dark.png" width="330" alt="移动端深色下拉">
+
 上传背景时的裁剪窗口（拖动 / 缩放 / 比例 / 实时预览）：
 
 ![背景裁剪](docs/screenshots/crop-modal.png)
