@@ -169,6 +169,63 @@ Bangumi 侧失败时返回 `502`。
 
 返回媒体库用户列表（`refresh=1` 跳过 60 秒缓存）。与 `/api/settings` 里的 `source` 结构相同。
 
+## 外观接口（服务器端保存）
+
+外观配置保存在状态库 `meta.ui_prefs`，背景图片保存在 `<state 目录>/assets/background.bin`，
+**所有设备共享**。浏览器只用 localStorage 做首屏缓存，避免闪白。
+
+### `GET /api/ui`
+
+```json
+{
+  "theme": "auto", "accent": "#7db3ff", "font_scale": 1.0, "density": "comfortable",
+  "background": {"mode": "image", "preset": "mist", "opacity": 0.55, "blur": 8, "dim": 0.45,
+                 "version": 3, "content_type": "image/png", "url": "/static/background?v=3",
+                 "image_bytes": 87563},
+  "palette": ["#a9bccb", "#c8b9b2"], "rev": 7
+}
+```
+
+`background.mode` 为 `none` / `preset` / `image`；`preset` 依赖浏览器端渐变，`image` 的 `url` 由服务端提供。
+`rev` 每次修改递增，供前端判断是否需要同步。
+
+### `PUT /api/ui`
+
+部分更新，未提供的字段保持不变；枚举非法返回 `400`，数值越界会被夹到合法区间。
+
+```json
+{"theme": "dark", "accent": "#c792ea", "font_scale": 1.1, "density": "compact",
+ "background": {"opacity": 0.4}}
+```
+
+### `PUT /api/ui/background`
+
+三种写法：
+
+* **上传图片**（推荐）：请求体是二进制，`Content-Type: image/png|jpeg|webp|gif`，≤ 8 MB；
+* **图片 URL**：`{"url": "https://example.com/a.jpg"}`，服务端下载后保存（避免跨域/图床失效）；
+* **内置预设**：`{"preset": "mist"}`，可选 `mist` / `dusk` / `ocean` / `paper`。
+
+```json
+200 {"ok": true, "ui": {...}}
+```
+
+### `DELETE /api/ui/background`
+
+删除图片文件并把 `mode` 设为 `none`。
+
+### `PUT /api/ui/palette`
+
+保存从背景提取的莫兰迪配色（最多 8 个 `#rrggbb`）：
+
+```json
+{"colors": ["#a9bccb", "#c8b9b2", "#b5a8b8"]}
+```
+
+### `GET /static/background`
+
+返回当前背景图片（`Cache-Control: public, max-age=3600` + `ETag`）；没有图片时 404。
+
 ## 示例
 
 ```bash

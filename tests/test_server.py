@@ -14,6 +14,7 @@ from bangumi_syncer.config import ServerConfig
 from bangumi_syncer.server import StatusServer, StatusState, build_status
 from bangumi_syncer.settings import SettingsManager
 from bangumi_syncer.state import StateStore
+from bangumi_syncer.ui import UiManager
 
 HEADER = {"X-Requested-With": "bangumi-syncer"}
 
@@ -50,6 +51,15 @@ class Client:
         except urllib.error.HTTPError as exc:
             return exc.code, json.loads(exc.read() or b"{}")
 
+    def send_raw(self, method: str, path: str, data: bytes, content_type: str):
+        headers = {"Content-Type": content_type, **HEADER}
+        request = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return response.status, json.loads(response.read() or b"{}")
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read() or b"{}")
+
 
 @pytest.fixture()
 def server(tmp_path, fnos_db):
@@ -69,7 +79,8 @@ def server(tmp_path, fnos_db):
     })
     state = StatusState(started_at=int(time.time()) - 5, dry_run=True)
     settings = SettingsManager(cfg, store)
-    instance = StatusServer(cfg, store, state, settings=settings)
+    ui = UiManager(store, str(tmp_path))
+    instance = StatusServer(cfg, store, state, settings=settings, ui=ui)
     instance.start()
     client = Client(instance.address)
     try:
@@ -252,6 +263,80 @@ def test_source_users_endpoint(server):
     assert status == 200
     assert payload["seasons"] == 2
     assert {user["name"] for user in payload["users"]} == {"alice", "bob"}
+
+
+def test_ui_prefs_endpoint(server):
+    client, _instance, _store = server
+    status, payload = client.get_json("api/ui")
+    assert status == 200
+    assert payload["theme"] == "auto"
+    assert payload["background"]["mode"] == "none"
+
+    # write guard
+    assert client.send("PUT", "api/ui", {"theme": "dark"}, header=False)[0] == 403
+    status, payload = client.send("PUT", "api/ui", {"theme": "dark", "accent": "#c792ea"})
+    assert status == 200
+    assert payload["ui"]["theme"] == "dark"
+    assert payload["ui"]["rev"] >= 1
+
+    status, payload = client.send("PUT", "api/ui", {"accent": "red"})
+    assert status == 400
+    assert "accent" in payload["error"]
+
+    status, payload = client.get_json("api/status")
+    assert payload["ui"]["theme"] == "dark"
+
+
+def test_background_upload_and_serving(server):
+    client, _instance, _store = server
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 256
+
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        client.get("static/background")
+    assert excinfo.value.code == 404
+
+    status, payload = client.send_raw("PUT", "api/ui/background", png, "image/png")
+    assert status == 200
+    background = payload["ui"]["background"]
+    assert background["mode"] == "image"
+    assert background["content_type"] == "image/png"
+    url = background["url"]
+
+    status, body = client.get(url.lstrip("/"))
+    assert status == 200 and body == png
+
+    status, payload = client.send("DELETE", "api/ui/background")
+    assert status == 200
+    assert payload["ui"]["background"]["mode"] == "none"
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        client.get("static/background")
+    assert excinfo.value.code == 404
+
+
+def test_background_rejects_non_images(server):
+    client, _instance, _store = server
+    status, payload = client.send_raw("PUT", "api/ui/background", b"hello", "image/png")
+    assert status == 400
+    assert "PNG" in payload["error"]
+
+
+def test_palette_endpoint(server):
+    client, _instance, _store = server
+    status, payload = client.send("PUT", "api/ui/palette", {"colors": ["#aabbcc", "#112233"]})
+    assert status == 200
+    assert payload["ui"]["palette"] == ["#aabbcc", "#112233"]
+    status, payload = client.send("PUT", "api/ui/palette", {"colors": []})
+    assert status == 400
+
+
+def test_background_preset(server):
+    client, _instance, _store = server
+    status, payload = client.send("PUT", "api/ui/background", {"preset": "dusk"})
+    assert status == 200
+    assert payload["ui"]["background"]["mode"] == "preset"
+    assert payload["ui"]["background"]["preset"] == "dusk"
+    status, payload = client.send("PUT", "api/ui/background", {"preset": "nope"})
+    assert status == 400
 
 
 def test_build_status_without_runtime_state(tmp_path, fnos_db):

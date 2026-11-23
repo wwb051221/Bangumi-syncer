@@ -32,6 +32,7 @@ from .log import get_logger
 from .settings import SettingsError, SettingsManager
 from .state import StateStore
 from .sync import RunResult
+from .ui import MAX_IMAGE_BYTES, UiError, UiManager
 from .util import format_time, human_duration
 
 log = get_logger("server")
@@ -87,7 +88,8 @@ def _json_response(payload: Any) -> bytes:
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
-def build_status(cfg: Config, store: StateStore, state: StatusState | None = None) -> dict[str, Any]:
+def build_status(cfg: Config, store: StateStore, state: StatusState | None = None,
+                 ui: UiManager | None = None) -> dict[str, Any]:
     tz = cfg.app.timezone
     runs = store.runs(10)
     for run in runs:
@@ -139,6 +141,7 @@ def build_status(cfg: Config, store: StateStore, state: StatusState | None = Non
         "last_result": state.last_result.as_dict() if state and state.last_result else None,
         "logs": state.log_lines(200) if state else [],
         "config": cfg.redacted(),
+        "ui": ui.public() if ui else None,
     }
 
 
@@ -149,6 +152,7 @@ class _Handler(BaseHTTPRequestHandler):
     store: StateStore
     state: StatusState | None
     settings: SettingsManager | None
+    ui: UiManager | None
     assets: dict[str, bytes]
     searchers: dict[str, Any]
     search_lock: threading.Lock
@@ -197,7 +201,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"ok": True, "version": __version__})
                 return
             if path == "/api/status":
-                self._send_json(200, build_status(self.cfg, self.store, self.state))
+                self._send_json(200, build_status(self.cfg, self.store, self.state, self.ui))
                 return
             if path == "/api/logs":
                 limit = _int_param(query, "limit", 200, 1, 1000)
@@ -214,6 +218,12 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/api/source-users":
                 self._handle_source_users(query)
                 return
+            if path == "/api/ui":
+                self._handle_ui_get()
+                return
+            if path == "/static/background":
+                self._serve_background()
+                return
             raise HttpError(404, "not found")
 
         self._require_write_header()
@@ -229,6 +239,18 @@ class _Handler(BaseHTTPRequestHandler):
         if method == "POST" and path == "/api/settings/reset":
             self._handle_settings_reset()
             return
+        if method == "PUT" and path == "/api/ui":
+            self._handle_ui_update()
+            return
+        if method == "PUT" and path == "/api/ui/palette":
+            self._handle_ui_palette()
+            return
+        if method == "PUT" and path == "/api/ui/background":
+            self._handle_background_put()
+            return
+        if method == "DELETE" and path == "/api/ui/background":
+            self._handle_background_delete()
+            return
         if method == "DELETE" and path == "/api/map":
             self._handle_map_delete(query)
             return
@@ -239,8 +261,17 @@ class _Handler(BaseHTTPRequestHandler):
 
     # ---------------------------------------------------------------- helpers
     def _require_write_header(self) -> None:
-        if self.headers.get("X-Requested-With") != "bangumi-syncer":
-            raise HttpError(403, "write operations require the X-Requested-With header")
+        if self.headers.get("X-Requested-With") == "bangumi-syncer":
+            return
+        # Drain the body before rejecting, otherwise some clients see a reset
+        # instead of the 403 (the socket closes with unread data).
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if 0 < length <= 65536:
+                self.rfile.read(length)
+        except (ValueError, OSError):
+            pass
+        raise HttpError(403, "write operations require the X-Requested-With header")
 
     def _read_json(self) -> dict[str, Any]:
         try:
@@ -407,6 +438,84 @@ class _Handler(BaseHTTPRequestHandler):
         manager = self._settings_manager()
         self._send_json(200, {"ok": True, "values": manager.reset(), "accounts": manager.accounts})
 
+    # ------------------------------------------------------------- appearance
+    def _ui_manager(self) -> UiManager:
+        if self.ui is None:
+            raise HttpError(503, "UI personalisation is not available in this process")
+        return self.ui
+
+    def _handle_ui_get(self) -> None:
+        self._send_json(200, self._ui_manager().public())
+
+    def _handle_ui_update(self) -> None:
+        manager = self._ui_manager()
+        body = self._read_json()
+        try:
+            self._send_json(200, {"ok": True, "ui": manager.update(body)})
+        except UiError as exc:
+            raise HttpError(400, str(exc)) from exc
+
+    def _handle_ui_palette(self) -> None:
+        manager = self._ui_manager()
+        body = self._read_json()
+        try:
+            self._send_json(200, {"ok": True, "ui": manager.set_palette(body.get("colors"))})
+        except UiError as exc:
+            raise HttpError(400, str(exc)) from exc
+
+    def _handle_background_put(self) -> None:
+        manager = self._ui_manager()
+        content_type = self.headers.get("Content-Type") or ""
+        try:
+            if content_type.startswith("image/"):
+                data = self._read_raw(MAX_IMAGE_BYTES + 1)
+                ui = manager.set_background_bytes(data, content_type)
+            else:
+                body = self._read_json()
+                if body.get("url"):
+                    ui = manager.set_background_url(str(body["url"]))
+                elif body.get("preset"):
+                    ui = manager.use_preset(str(body["preset"]))
+                else:
+                    raise HttpError(400, "expected an image body, a url or a preset")
+        except UiError as exc:
+            raise HttpError(400, str(exc)) from exc
+        self._send_json(200, {"ok": True, "ui": ui})
+
+    def _handle_background_delete(self) -> None:
+        manager = self._ui_manager()
+        try:
+            ui = manager.clear_background()
+        except UiError as exc:
+            raise HttpError(400, str(exc)) from exc
+        self._send_json(200, {"ok": True, "ui": ui})
+
+    def _serve_background(self) -> None:
+        manager = self.ui
+        item = manager.background() if manager is not None else None
+        if item is None:
+            raise HttpError(404, "no background image")
+        data, content_type, version = item
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=3600")
+        self.send_header("ETag", 'W/"bg-%d"' % version)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _read_raw(self, limit: int) -> bytes:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError as exc:
+            raise HttpError(400, "invalid Content-Length") from exc
+        if length <= 0:
+            raise HttpError(400, "empty request body")
+        if length > limit:
+            raise HttpError(413, "image is too large")
+        return self.rfile.read(length)
+
     # --------------------------------------------------------------- responses
     def _send_json(self, status: int, payload: Any) -> None:
         self._send_bytes(status, "application/json; charset=utf-8", _json_response(payload))
@@ -466,11 +575,13 @@ class StatusServer:
         store: StateStore,
         state: StatusState | None = None,
         settings: SettingsManager | None = None,
+        ui: UiManager | None = None,
     ) -> None:
         self.cfg = cfg
         self.store = store
         self.state = state
         self.settings = settings
+        self.ui = ui
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._ring: _RingHandler | None = None
@@ -491,6 +602,7 @@ class StatusServer:
                 "store": self.store,
                 "state": self.state,
                 "settings": self.settings,
+                "ui": self.ui,
                 "assets": self._assets,
                 "searchers": {},
                 "search_lock": threading.Lock(),

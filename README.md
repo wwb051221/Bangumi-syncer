@@ -136,8 +136,12 @@ Open `http://<nas>:8099/` after the container starts:
 - **Accounts** — token state and expiry, copy-paste authorisation command.
 - **Logs** — last 400 log lines, refreshed every 2 s.
 - **Settings** — edit sync/match/library/user settings online (persisted in the state DB, applied
-  on the next cycle **without a restart**), pick which fnOS users to sync, light/dark theme,
-  accent colour, font scale and density, plus a step-by-step Bangumi API guide.
+  on the next cycle **without a restart**), pick which fnOS users to sync, plus a step-by-step
+  Bangumi API guide.
+- **Appearance** (stored server-side, shared by every device) — auto/light/dark theme, six accent
+  colours plus a custom picker, 85–125% font scale, comfortable/compact density; custom background
+  via **upload / image URL / four built-in gradient presets** with opacity, blur and scrim controls,
+  and **Morandi palette extraction from the background** that can be applied as the accent colour.
 
 The **Sync now** button in the header wakes the loop immediately (≤0.5 s).
 
@@ -181,7 +185,7 @@ Exit codes: `0` ok, `1` run failed, `2` config error, `3` re-authorisation neede
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest        # 135 offline tests (synthetic fnOS DB + fake tracker)
+python -m pytest        # 155 offline tests (synthetic fnOS DB + fake tracker)
 ruff check src tests
 ```
 

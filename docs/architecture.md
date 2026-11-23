@@ -86,6 +86,20 @@ SyncEngine.run()
 前端个性化（主题、主题色、字号、密度）只存在浏览器 `localStorage`，不写入服务端；
 `index.html` 里有一段内联引导脚本，在首屏渲染前应用主题，避免闪白。
 
+## 外观与背景（服务器端保存）
+
+`ui.py` 的 `UiManager` 负责主题、主题色、字号、密度、背景与莫兰迪配色：
+
+* 配置保存在状态库 `meta.ui_prefs`（JSON，`rev` 每次修改递增）；
+* 背景图片保存在 `<state 目录>/assets/background.bin`，由 `GET /static/background` 提供，
+  带 `ETag` 与 1 小时缓存；
+* 背景来源：上传（校验 PNG/JPEG/WebP/GIF 魔数、≤ 8 MB）、URL（服务端下载后落盘，
+  避免跨域与图床失效）、内置渐变预设（纯 CSS，无文件）；
+* 莫兰迪配色在**浏览器**里用 canvas 取样（服务器不需要图像库），按色相去重、把饱和度压到
+  10%–30%、亮度收进 36%–68%，结果 `PUT /api/ui/palette` 存回服务器；
+* 前端首屏用 localStorage 缓存快速应用外观，随后以 `/api/status` 里的 `ui` 为准，
+  `rev` 变化时自动重新应用，多设备最终一致。
+
 ## 扩展点
 
 ### 新的媒体服务器
@@ -141,4 +155,4 @@ class JellyfinSource(SourceAdapter):
 * `test_cli.py` 直接调 `cli.main([...])` 跑 `dump` / `status` / `map` / `review` / `run --once`，
   验证退出码与输出（不联网）。
 * 覆盖：快照解析、过滤、比例判定、区间映射、幂等、远端核对、收藏完成、鉴权失败、限速重试。
-* 全部离线（135 个用例，约 17 秒）。
+* 全部离线（155 个用例，约 17 秒）。

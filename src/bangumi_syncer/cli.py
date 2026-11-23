@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import signal
 import sys
 import threading
@@ -30,6 +31,7 @@ from .sources import SourceError
 from .state import StateStore
 from .sync import SyncEngine
 from .trackers import AuthError, TrackerError
+from .ui import UiManager
 from .util import format_time, human_duration
 
 log = get_logger("cli")
@@ -116,6 +118,8 @@ def _make_tracker(cfg: Config, store: StateStore, account_name: str):
 def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
     store = StateStore(cfg.app.state_db)
     settings_manager = SettingsManager(cfg, store)
+    ui_manager = UiManager(store, os.path.dirname(os.path.abspath(cfg.app.state_db)),
+                           user_agent=cfg.target.user_agent)
     source = sources.create(cfg.source)
     engine = SyncEngine(cfg, store, source)
 
@@ -138,7 +142,7 @@ def cmd_run(cfg: Config, args: argparse.Namespace) -> int:
 
         status_state = StatusState(started_at=int(time.time()), dry_run=cfg.app.dry_run)
         status_state.source_description = source.describe()
-        status_server = StatusServer(cfg, store, status_state, settings=settings_manager)
+        status_server = StatusServer(cfg, store, status_state, settings=settings_manager, ui=ui_manager)
         try:
             status_server.start()
         except OSError as exc:

@@ -7,27 +7,38 @@
   <title>Bangumi-syncer</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237db3ff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%230f1115' font-family='sans-serif'%3EB%3C/text%3E%3C/svg%3E">
   <script>
-    /* Apply theme / personalisation before first paint to avoid a flash. */
+    /* Apply the cached appearance before first paint (server values follow). */
     (function () {
       try {
-        var prefs = JSON.parse(localStorage.getItem('bs.prefs.v1') || '{}');
+        var root = document.documentElement;
+        var cache = JSON.parse(localStorage.getItem('bs.ui.cache') || '{}');
         var query = new URLSearchParams(location.search).get('theme');
-        var pref = query || prefs.theme || 'auto';
+        var pref = query || cache.theme || 'auto';
         var resolved = pref === 'auto'
           ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
           : pref;
-        var root = document.documentElement;
         root.dataset.theme = resolved;
         root.dataset.themePref = pref;
-        root.dataset.density = prefs.density || 'comfortable';
-        if (prefs.accent) root.style.setProperty('--accent', prefs.accent);
-        if (prefs.fontScale) root.style.setProperty('--font-scale', prefs.fontScale);
+        root.dataset.density = cache.density || 'comfortable';
+        if (cache.accent) root.style.setProperty('--accent', cache.accent);
+        if (cache.font_scale) root.style.setProperty('--font-scale', cache.font_scale);
+        var bg = cache.background || {};
+        if (bg.mode && bg.mode !== 'none') {
+          root.dataset.bg = bg.mode;
+          if (bg.mode === 'preset') root.dataset.bgPreset = bg.preset || 'mist';
+          if (bg.mode === 'image' && bg.url) root.style.setProperty('--bg-image', 'url("' + bg.url + '")');
+          if (typeof bg.opacity === 'number') root.style.setProperty('--bg-opacity', bg.opacity);
+          if (typeof bg.blur === 'number') root.style.setProperty('--bg-blur', bg.blur + 'px');
+          if (typeof bg.dim === 'number') root.style.setProperty('--bg-dim', bg.dim);
+        }
       } catch (err) { /* localStorage may be disabled */ }
     })();
   </script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+  <div class="bg-layer" id="bgLayer" aria-hidden="true"></div>
+  <div class="bg-scrim" id="bgScrim" aria-hidden="true"></div>
   <header class="topbar">
     <div class="brand">
       <span class="logo">B</span>

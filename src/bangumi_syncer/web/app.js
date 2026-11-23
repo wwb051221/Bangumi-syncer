@@ -2,10 +2,23 @@
 'use strict';
 
 const CSRF = { 'X-Requested-With': 'bangumi-syncer' };
-const PREFS_KEY = 'bs.prefs.v1';
-const DEFAULT_PREFS = { theme: 'auto', accent: '#7db3ff', fontScale: 1, density: 'comfortable' };
-const ACCENTS = ['#7db3ff', '#6ee7a8', '#c792ea', '#ffb86b', '#ff7eb6', '#8be9fd'];
 const TABS = ['overview', 'review', 'mappings', 'accounts', 'logs', 'settings'];
+const ACCENTS = ['#7db3ff', '#6ee7a8', '#c792ea', '#ffb86b', '#ff7eb6', '#8be9fd'];
+const BG_PRESETS = {
+  mist: 'linear-gradient(160deg, #a8c0d8 0%, #cfd9e2 40%, #e8d9d2 75%, #c4b7c9 100%)',
+  dusk: 'linear-gradient(155deg, #2b2f45 0%, #5a4a63 38%, #9a6f72 72%, #d3a27f 100%)',
+  ocean: 'linear-gradient(150deg, #14364a 0%, #1f5a6e 40%, #3f8a8c 72%, #9fc6b8 100%)',
+  paper: 'linear-gradient(160deg, #efe7da 0%, #e3d7c4 45%, #d8c9bd 70%, #cbbfb8 100%)',
+};
+const UI_DEFAULT = {
+  theme: 'auto', accent: '#7db3ff', font_scale: 1, density: 'comfortable',
+  background: { mode: 'none', preset: 'mist', opacity: 0.55, blur: 8, dim: 0.45, url: '' },
+  palette: [], rev: 0,
+};
+
+if (!window.__BS_UI_INITIAL__ && localStorage.getItem('bs.ui.cache')) {
+  try { window.__BS_UI_INITIAL__ = JSON.parse(localStorage.getItem('bs.ui.cache')); } catch (e) { /* ignore */ }
+}
 
 const state = {
   status: null,
@@ -16,11 +29,13 @@ const state = {
   settingsError: '',
   settingsLoading: false,
   userRows: [],
-  prefs: loadPrefs(),
+  ui: { ...UI_DEFAULT },
+  uiRev: -1,
   themeOverride: new URLSearchParams(location.search).get('theme') || '',
   refreshTimer: null,
   logTimer: null,
   runBusy: false,
+  bgTimer: null,
 };
 
 /* ------------------------------------------------------------------ utils */
@@ -99,55 +114,122 @@ async function apiSend(method, path, body) {
   return payload;
 }
 
-/* ------------------------------------------------------------- appearance */
-function loadPrefs() {
-  try {
-    return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
-  } catch (err) {
-    return { ...DEFAULT_PREFS };
-  }
-}
-
+/* -------------------------------------------------------- appearance (server) */
 function resolvedTheme(pref) {
   if (pref === 'light' || pref === 'dark') return pref;
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
-function applyPrefs(persist) {
+function applyBackground(background) {
   const root = document.documentElement;
-  const pref = state.themeOverride || state.prefs.theme;
-  root.dataset.theme = resolvedTheme(state.themeOverride || state.prefs.theme);
-  root.dataset.themePref = pref;
-  root.dataset.density = state.prefs.density;
-  root.style.setProperty('--accent', state.prefs.accent);
-  root.style.setProperty('--font-scale', String(state.prefs.fontScale));
-  if (persist) {
-    try { localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs)); } catch (err) { /* ignore */ }
+  const bg = background || UI_DEFAULT.background;
+  root.dataset.bg = bg.mode || 'none';
+  root.dataset.bgPreset = bg.preset || 'mist';
+  if (bg.mode === 'image' && bg.url) {
+    root.style.setProperty('--bg-image', 'url("' + bg.url + '")');
+  } else {
+    root.style.removeProperty('--bg-image');
   }
+  root.style.setProperty('--bg-opacity', String(bg.opacity));
+  root.style.setProperty('--bg-blur', num(bg.blur) + 'px');
+  root.style.setProperty('--bg-dim', String(bg.dim));
+}
+
+function cacheUi(ui) {
+  try {
+    localStorage.setItem('bs.ui.cache', JSON.stringify({
+      theme: ui.theme, accent: ui.accent, font_scale: ui.font_scale, density: ui.density,
+      background: {
+        mode: ui.background.mode, preset: ui.background.preset, url: ui.background.url,
+        opacity: ui.background.opacity, blur: ui.background.blur, dim: ui.background.dim,
+      },
+    }));
+  } catch (err) { /* ignore */ }
+}
+
+function applyUi(ui) {
+  if (!ui) return;
+  state.ui = ui;
+  state.uiRev = num(ui.rev);
+  const root = document.documentElement;
+  if (!state.themeOverride) {
+    root.dataset.theme = resolvedTheme(ui.theme);
+    root.dataset.themePref = ui.theme;
+  }
+  root.dataset.density = ui.density;
+  root.style.setProperty('--accent', ui.accent);
+  root.style.setProperty('--font-scale', String(ui.font_scale));
+  applyBackground(ui.background);
+  cacheUi(ui);
   syncAppearanceControls();
   updateLayoutFlag();
 }
 
-function updatePrefs(patch) {
-  state.prefs = { ...state.prefs, ...patch };
-  state.themeOverride = '';  // an explicit choice wins over ?theme=
-  applyPrefs(true);
+async function putUi(patch, message) {
+  try {
+    const data = await apiSend('PUT', '/api/ui', patch);
+    state.themeOverride = '';
+    applyUi(data.ui);
+    if (message) toast(message, 'ok');
+    return true;
+  } catch (err) {
+    toast('保存外观失败：' + err.message, 'err');
+    refresh();
+    return false;
+  }
+}
+
+function scheduleBackground(patch) {
+  applyBackground({ ...state.ui.background, ...patch });
+  syncBackgroundLabels({ ...state.ui.background, ...patch });
+  clearTimeout(state.bgTimer);
+  state.bgTimer = setTimeout(() => { putUi({ background: patch }); }, 400);
 }
 
 function syncAppearanceControls() {
+  const ui = state.ui;
   document.querySelectorAll('[data-role="theme-option"]').forEach((node) => {
-    node.classList.toggle('active', node.dataset.value === (state.themeOverride || state.prefs.theme));
+    node.classList.toggle('active', node.dataset.value === (state.themeOverride || ui.theme));
   });
   document.querySelectorAll('[data-role="density-option"]').forEach((node) => {
-    node.classList.toggle('active', node.dataset.value === state.prefs.density);
+    node.classList.toggle('active', node.dataset.value === ui.density);
   });
   document.querySelectorAll('[data-role="accent-option"]').forEach((node) => {
-    node.classList.toggle('active', node.dataset.value.toLowerCase() === state.prefs.accent.toLowerCase());
+    node.classList.toggle('active', String(node.dataset.value).toLowerCase() === String(ui.accent).toLowerCase());
   });
   const fontInput = document.querySelector('[data-role="font-scale"]');
-  if (fontInput) fontInput.value = String(state.prefs.fontScale);
+  if (fontInput) fontInput.value = String(ui.font_scale);
   const fontLabel = document.getElementById('font-scale-value');
-  if (fontLabel) fontLabel.textContent = Math.round(state.prefs.fontScale * 100) + '%';
+  if (fontLabel) fontLabel.textContent = Math.round(ui.font_scale * 100) + '%';
+  syncBackgroundLabels(ui.background);
+}
+
+function syncBackgroundLabels(background) {
+  const bg = background || state.ui.background;
+  const map = { 'bg-opacity': bg.opacity, 'bg-blur': bg.blur, 'bg-dim': bg.dim };
+  Object.keys(map).forEach((role) => {
+    const label = document.querySelector('[data-value-for="' + role + '"]');
+    if (label) {
+      label.textContent = role === 'bg-opacity'
+        ? Math.round(map[role] * 100) + '%'
+        : (role === 'bg-dim' ? Math.round(map[role] * 100) + '%' : Math.round(map[role]) + 'px');
+    }
+    const input = document.querySelector('[data-role="' + role + '"]');
+    if (input) input.value = String(map[role]);
+  });
+  const preview = document.getElementById('bg-preview');
+  if (preview) {
+    if (bg.mode === 'image' && bg.url) {
+      preview.style.backgroundImage = 'url("' + bg.url + '")';
+      preview.textContent = '';
+    } else if (bg.mode === 'preset') {
+      preview.style.backgroundImage = BG_PRESETS[bg.preset] || BG_PRESETS.mist;
+      preview.textContent = '';
+    } else {
+      preview.style.backgroundImage = 'none';
+      preview.textContent = '未设置背景';
+    }
+  }
 }
 
 function updateLayoutFlag() {
@@ -160,9 +242,9 @@ function updateLayoutFlag() {
 async function refresh() {
   try {
     state.status = await apiGet('/api/status');
+    if (state.status.ui && num(state.status.ui.rev) !== state.uiRev) applyUi(state.status.ui);
     renderHeader();
     updateLayoutFlag();
-    // Do not clobber forms / selections that the user is editing.
     if (state.tab === 'overview' || state.tab === 'accounts') render();
   } catch (err) {
     document.getElementById('app').innerHTML =
@@ -460,11 +542,11 @@ function viewSettings() {
   const accounts = state.settings.accounts || [];
   const source = state.settings.source || { users: [] };
   const sourceError = state.settings.source_error;
-  const prefs = state.prefs;
+  const ui = state.ui;
 
-  const option = (role, value, label, current) =>
+  const option = (role, value, label) =>
     '<button type="button" data-action="set-pref" data-pref="' + role + '" data-value="' + esc(value) + '"' +
-    ' data-role="' + role + '-option" class="' + (String(current) === String(value) ? 'active' : '') + '">' +
+    ' data-role="' + role + '-option" class="' + (String(ui[role]) === String(value) ? 'active' : '') + '">' +
     esc(label) + '</button>';
 
   let html = '';
@@ -517,23 +599,71 @@ function viewSettings() {
     '<p class="hint">勾选即参与同步；勾掉不会删除已有映射，只是不再读取该用户的进度。新发现的用户默认不勾选。</p>' +
     '</div></div>';
 
-  html += '<div class="section"><h2>界面个性与外观</h2><div class="card">' +
+  /* ---- appearance (stored on the server) ---- */
+  const bg = ui.background || {};
+  const previewStyle = bg.mode === 'image' && bg.url
+    ? 'background-image:url(&quot;' + esc(bg.url) + '&quot;)'
+    : (bg.mode === 'preset' ? 'background-image:' + BG_PRESETS[bg.preset] : '');
+  html += '<div class="section"><h2>界面与外观</h2><div class="card">' +
+    '<p class="hint" style="margin-top:0">主题、主题色、字号、密度、背景都保存在<strong>服务器</strong>，所有浏览器/设备共享同一套外观；修改即时生效。' +
+    '下面展示的是当前服务端配置。</p>' +
     '<div class="split">' +
     '<div><label class="field">主题</label><div class="seg" data-role="theme-seg">' +
-    option('theme', 'auto', '跟随系统', prefs.theme) + option('theme', 'light', '浅色', prefs.theme) + option('theme', 'dark', '深色', prefs.theme) +
-    '</div><p class="hint">「跟随系统」会随你的浏览器/系统深色模式自动切换。</p></div>' +
+    option('theme', 'auto', '跟随系统') + option('theme', 'light', '浅色') + option('theme', 'dark', '深色') +
+    '</div><p class="hint">「跟随系统」会随浏览器/系统的深色模式自动切换。</p></div>' +
     '<div><label class="field">主题色</label><div class="swatches">' +
-    ACCENTS.map((color) => '<button type="button" class="swatch' + (prefs.accent.toLowerCase() === color ? ' active' : '') +
+    ACCENTS.map((color) => '<button type="button" class="swatch' + (String(ui.accent).toLowerCase() === color ? ' active' : '') +
       '" data-action="set-pref" data-pref="accent" data-value="' + color + '" data-role="accent-option" style="background:' + color + '" title="' + color + '"></button>').join('') +
-    '<input type="color" data-role="accent-custom" value="' + esc(prefs.accent) + '" title="自定义颜色" style="width:2rem;height:2rem;padding:0;border-radius:50%">' +
-    '</div><p class="hint">影响链接、按钮、高亮等强调色，只保存在本浏览器。</p></div>' +
-    '<div><label class="field">字号 <span id="font-scale-value" class="muted">' + Math.round(prefs.fontScale * 100) + '%</span></label>' +
-    '<input type="range" data-role="font-scale" min="0.85" max="1.25" step="0.05" value="' + esc(prefs.fontScale) + '"></div>' +
+    '<input type="color" data-role="accent-custom" value="' + esc(ui.accent) + '" title="自定义颜色" style="width:2rem;height:2rem;padding:0;border-radius:50%">' +
+    '</div><p class="hint">影响链接、按钮、高亮等强调色。</p></div>' +
+    '<div><label class="field">字号 <span id="font-scale-value" class="muted">' + Math.round(ui.font_scale * 100) + '%</span></label>' +
+    '<input type="range" data-role="font-scale" min="0.85" max="1.25" step="0.05" value="' + esc(ui.font_scale) + '"></div>' +
     '<div><label class="field">密度</label><div class="seg" data-role="density-seg">' +
-    option('density', 'comfortable', '舒适', prefs.density) + option('density', 'compact', '紧凑', prefs.density) + '</div></div>' +
-    '</div><div class="actions" style="margin-top:.8rem">' +
-    '<button class="btn" data-action="reset-prefs">恢复默认外观</button>' +
-    '<span class="muted" style="font-size:.8rem">个性化只影响当前浏览器，不写入配置。</span></div></div></div>';
+    option('density', 'comfortable', '舒适') + option('density', 'compact', '紧凑') + '</div></div>' +
+    '</div>';
+
+  html += '<hr><h3>背景</h3>' +
+    '<div class="bg-options">' +
+    '<div><div class="bg-preview" id="bg-preview" style="' + previewStyle + '">' +
+    (bg.mode === 'none' ? '未设置背景' : '') + '</div>' +
+    '<div class="row" style="margin-top:.6rem;align-items:center">' +
+    '<select id="bg-preset" style="width:8rem">' +
+    Object.keys(BG_PRESETS).map((key) => '<option value="' + key + '"' + (bg.preset === key ? ' selected' : '') + '>' +
+      ({ mist: '晨雾', dusk: '暮色', ocean: '深海', paper: '纸感' })[key] + '</option>').join('') +
+    '</select>' +
+    '<button class="btn small" data-action="bg-preset">使用预设</button>' +
+    '<button class="btn small danger" data-action="bg-clear">清除背景</button>' +
+    '</div>' +
+    '<div class="form-grid" style="margin-top:.7rem">' +
+    '<label class="field">上传图片（PNG/JPEG/WebP，≤8 MB）<input type="file" id="bg-file" accept="image/*"></label>' +
+    '<label class="field">或图片 URL<input id="bg-url" placeholder="https://…"></label>' +
+    '</div><div class="row" style="margin-top:.45rem"><button class="btn small" data-action="bg-url">从 URL 加载</button>' +
+    '<span class="hint">下载后保存到服务器，避免跨域与图床失效。</span></div>' +
+    '</div>' +
+    '<div><div class="slider-row"><span class="muted" style="width:4.5rem">不透明度</span>' +
+    '<input type="range" data-role="bg-opacity" min="0.05" max="1" step="0.05" value="' + esc(bg.opacity) + '">' +
+    '<span class="value" data-value-for="bg-opacity"></span></div>' +
+    '<div class="slider-row"><span class="muted" style="width:4.5rem">模糊</span>' +
+    '<input type="range" data-role="bg-blur" min="0" max="30" step="1" value="' + esc(bg.blur) + '">' +
+    '<span class="value" data-value-for="bg-blur"></span></div>' +
+    '<div class="slider-row"><span class="muted" style="width:4.5rem">遮罩</span>' +
+    '<input type="range" data-role="bg-dim" min="0" max="0.9" step="0.05" value="' + esc(bg.dim) + '">' +
+    '<span class="value" data-value-for="bg-dim"></span></div>' +
+    '<p class="hint">遮罩越深，文字越清晰；不透明度控制背景本身的强度。</p></div>' +
+    '</div>' +
+
+    '<h3 style="margin-top:1.1rem">莫兰迪配色</h3>' +
+    '<p class="hint" style="margin-top:0">从当前背景图中提取低饱和度的莫兰迪色（在浏览器里取样，结果保存到服务器）。</p>' +
+    '<div class="row"><button class="btn" data-action="extract-palette"' +
+    (bg.mode === 'image' ? '' : ' disabled') + '>从背景取色</button>' +
+    (bg.mode === 'image' ? '' : '<span class="hint">先上传或设置一张背景图片</span>') + '</div>' +
+    '<div class="palette" style="margin-top:.7rem">' +
+    ((ui.palette || []).length
+      ? ui.palette.map((color) => '<button type="button" class="swatch" data-action="use-palette-color" data-value="' + color +
+        '" style="background:' + color + '" title="' + color + '"></button>').join('')
+      : '<span class="hint">还没有取过色</span>') +
+    '</div>' +
+    '</div></div>';
 
   html += '<div class="section"><h2>Bangumi API 获取指引</h2><div class="card">' +
     '<ol class="steps">' +
@@ -693,6 +823,155 @@ async function refreshUsers() {
   }
 }
 
+/* ---------------------------------------------------------------- palette */
+function rgbToHsl(r, g, b) {
+  const rr = r / 255, gg = g / 255, bb = b / 255;
+  const max = Math.max(rr, gg, bb), min = Math.min(rr, gg, bb);
+  const l = (max + min) / 2;
+  let h = 0, s = 0;
+  const d = max - min;
+  if (d > 0) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === rr) h = (gg - bb) / d + (gg < bb ? 6 : 0);
+    else if (max === gg) h = (bb - rr) / d + 2;
+    else h = (rr - gg) / d + 4;
+    h /= 6;
+  }
+  return [h, s, l];
+}
+
+function hslToHex(h, s, l) {
+  const a = s * Math.min(l, 1 - l);
+  const channel = (n) => {
+    const k = (n + h * 12) % 12;
+    const value = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(255 * value).toString(16).padStart(2, '0');
+  };
+  return '#' + channel(0) + channel(8) + channel(4);
+}
+
+async function paletteFromImage(url) {
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.src = url;
+  if (image.decode) await image.decode(); else await new Promise((res, rej) => {
+    image.onload = res; image.onerror = rej;
+  });
+  const size = 72;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(image, 0, 0, size, size);
+  const data = ctx.getImageData(0, 0, size, size).data;
+  const buckets = new Map();
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 160) continue;
+    const key = ((data[i] >> 4) << 8) | ((data[i + 1] >> 4) << 4) | (data[i + 2] >> 4);
+    const entry = buckets.get(key) || [0, 0, 0, 0];
+    entry[0] += data[i]; entry[1] += data[i + 1]; entry[2] += data[i + 2]; entry[3] += 1;
+    buckets.set(key, entry);
+  }
+  const ranked = Array.from(buckets.values())
+    .sort((a, b) => b[3] - a[3])
+    .slice(0, 18);
+  const colors = [];
+  const hues = [];
+  for (const [sumR, sumG, sumB, count] of ranked) {
+    const [h, s, l] = rgbToHsl(Math.round(sumR / count), Math.round(sumG / count), Math.round(sumB / count));
+    // Morandi: keep the hue, flatten saturation and lift/pull lightness into a soft band.
+    const mutedS = Math.min(0.30, Math.max(0.10, s * 0.42));
+    const mutedL = Math.min(0.68, Math.max(0.36, l * 0.82 + 0.1));
+    const duplicate = hues.some((hue) => {
+      const diff = Math.abs(hue - h);
+      return Math.min(diff, 1 - diff) < 0.045;
+    });
+    if (duplicate) continue;
+    hues.push(h);
+    colors.push(hslToHex(h, mutedS, mutedL));
+    if (colors.length >= 6) break;
+  }
+  if (!colors.length) throw new Error('背景图颜色过于单一，无法取色');
+  return colors;
+}
+
+async function extractPalette() {
+  const bg = state.ui.background || {};
+  if (bg.mode !== 'image' || !bg.url) {
+    toast('请先上传或设置一张背景图片', 'err');
+    return;
+  }
+  try {
+    const colors = await paletteFromImage(bg.url);
+    const data = await apiSend('PUT', '/api/ui/palette', { colors });
+    applyUi(data.ui);
+    toast('已提取 ' + colors.length + ' 个莫兰迪色，保存到服务器');
+    render();
+  } catch (err) {
+    toast('取色失败：' + err.message, 'err');
+  }
+}
+
+/* -------------------------------------------------------------- background */
+async function uploadBackground(file) {
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) {
+    toast('图片超过 8 MB', 'err');
+    return;
+  }
+  try {
+    const response = await fetch('/api/ui/background', {
+      method: 'PUT',
+      headers: { ...CSRF, 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || response.statusText);
+    applyUi(data.ui);
+    toast('背景已上传并保存到服务器');
+    render();
+  } catch (err) {
+    toast('上传失败：' + err.message, 'err');
+  }
+}
+
+async function setBackgroundUrl() {
+  const input = document.getElementById('bg-url');
+  const url = (input && input.value || '').trim();
+  if (!url) { toast('请填写图片 URL', 'err'); return; }
+  try {
+    const data = await apiSend('PUT', '/api/ui/background', { url });
+    applyUi(data.ui);
+    toast('背景已下载并保存到服务器');
+    render();
+  } catch (err) {
+    toast('加载失败：' + err.message, 'err');
+  }
+}
+
+async function useBackgroundPreset() {
+  const select = document.getElementById('bg-preset');
+  const preset = select ? select.value : 'mist';
+  try {
+    const data = await apiSend('PUT', '/api/ui/background', { preset });
+    applyUi(data.ui);
+    toast('已应用预设背景');
+    render();
+  } catch (err) {
+    toast('应用失败：' + err.message, 'err');
+  }
+}
+
+async function clearBackground() {
+  try {
+    const data = await apiSend('DELETE', '/api/ui/background');
+    applyUi(data.ui);
+    toast('背景已清除');
+    render();
+  } catch (err) {
+    toast('清除失败：' + err.message, 'err');
+  }
+}
+
 /* ----------------------------------------------------------------- render */
 function render() {
   if (!state.status) return;
@@ -762,18 +1041,11 @@ document.addEventListener('click', async (event) => {
   }
 
   if (action === 'set-pref') {
-    const patch = {};
+    const pref = target.dataset.pref;
     const value = target.dataset.value;
-    patch[target.dataset.pref] = target.dataset.pref === 'fontScale' ? Number(value) : value;
-    updatePrefs(patch);
-    return;
-  }
-
-  if (action === 'reset-prefs') {
-    state.prefs = { ...DEFAULT_PREFS };
-    state.themeOverride = '';
-    applyPrefs(true);
-    toast('已恢复默认外观');
+    const patch = {};
+    if (pref === 'font_scale') patch[pref] = Number(value); else patch[pref] = value;
+    await putUi(patch);
     return;
   }
 
@@ -797,6 +1069,32 @@ document.addEventListener('click', async (event) => {
     state.userRows = state.userRows.filter((row) => row.name !== name);
     render();
     toast('已从同步列表移除，保存后生效');
+    return;
+  }
+
+  if (action === 'bg-url') {
+    await setBackgroundUrl();
+    return;
+  }
+
+  if (action === 'bg-preset') {
+    await useBackgroundPreset();
+    return;
+  }
+
+  if (action === 'bg-clear') {
+    if (!confirm('清除当前背景？图片会从服务器删除。')) return;
+    await clearBackground();
+    return;
+  }
+
+  if (action === 'extract-palette') {
+    await extractPalette();
+    return;
+  }
+
+  if (action === 'use-palette-color') {
+    await putUi({ accent: target.dataset.value }, '主题色已更新');
     return;
   }
 
@@ -885,6 +1183,11 @@ document.addEventListener('change', (event) => {
     return;
   }
 
+  if (target.id === 'bg-file') {
+    uploadBackground(target.files && target.files[0]);
+    return;
+  }
+
   const row = target.closest('tr[data-user]');
   if (row) {
     const name = row.dataset.user;
@@ -900,14 +1203,26 @@ document.addEventListener('change', (event) => {
   }
 
   if (target.dataset && target.dataset.role === 'accent-custom') {
-    updatePrefs({ accent: target.value });
+    putUi({ accent: target.value });
   }
 });
 
 document.addEventListener('input', (event) => {
   const target = event.target;
-  if (target.dataset && target.dataset.role === 'font-scale') {
-    updatePrefs({ fontScale: Number(target.value) });
+  const role = target.dataset && target.dataset.role;
+  if (role === 'font-scale') {
+    const value = Number(target.value);
+    document.documentElement.style.setProperty('--font-scale', String(value));
+    const label = document.getElementById('font-scale-value');
+    if (label) label.textContent = Math.round(value * 100) + '%';
+    clearTimeout(state.bgTimer);
+    state.bgTimer = setTimeout(() => putUi({ font_scale: value }), 300);
+    return;
+  }
+  if (role === 'bg-opacity' || role === 'bg-blur' || role === 'bg-dim') {
+    const patch = {};
+    patch[role.replace('bg-', '')] = Number(target.value);
+    scheduleBackground(patch);
   }
 });
 
@@ -962,7 +1277,7 @@ window.addEventListener('resize', updateLayoutFlag);
 if (window.matchMedia) {
   const media = window.matchMedia('(prefers-color-scheme: light)');
   const onChange = () => {
-    if (!state.themeOverride && state.prefs.theme === 'auto') applyPrefs(false);
+    if (!state.themeOverride && state.ui.theme === 'auto') applyUi(state.ui);
   };
   if (media.addEventListener) media.addEventListener('change', onChange);
   else if (media.addListener) media.addListener(onChange);
@@ -971,8 +1286,14 @@ if (window.matchMedia) {
 /* ------------------------------------------------------------------- boot */
 (async function boot() {
   if (!TABS.includes(state.tab)) state.tab = 'overview';
-  applyPrefs(false);
+  if (window.__BS_UI_INITIAL__) {
+    const cached = window.__BS_UI_INITIAL__;
+    applyBackground(cached.background || {});
+    if (cached.accent) document.documentElement.style.setProperty('--accent', cached.accent);
+    if (cached.font_scale) document.documentElement.style.setProperty('--font-scale', cached.font_scale);
+  }
   await refresh();
+  if (!state.status || !state.status.ui) applyUi({ ...UI_DEFAULT });
   if (state.tab === 'settings') await loadSettings();
   render();
   startPolling();
