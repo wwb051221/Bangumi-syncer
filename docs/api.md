@@ -115,6 +115,60 @@ Bangumi 侧失败时返回 `502`。
 200 {"ok": true}
 ```
 
+## 设置接口
+
+运行时设置保存在状态库（`meta.runtime_settings`），修改后**下一轮同步生效**，无需重启容器。
+
+### `GET /api/settings`
+
+```json
+{
+  "values": {
+    "dry_run": true, "interval_seconds": 300, "watch_ratio": 0.9,
+    "min_position_seconds": 60, "verify_remote": true,
+    "mark_in_progress": true, "mark_completed": true,
+    "include_paths": ["/vol1/1000/影片/动漫"], "exclude_paths": [],
+    "skip_season_zero": true, "min_episodes": 1,
+    "match": {"min_score": 0.86, "min_margin": 0.06, "search_limit": 8},
+    "users": [{"fnos_user": "wwb051221", "account": "main", "enabled": true, "watch_ratio": null}]
+  },
+  "accounts": ["main"],
+  "source": {"users": [{"key": "...", "name": "wwb051221", "plays": 3, "finished": 0}],
+             "seasons": 13, "episodes": 296, "include_paths": ["/vol1/1000/影片/动漫"]},
+  "source_error": null
+}
+```
+
+`source` 是直接从飞牛影视数据库读到的**真实用户列表**（缓存 60 秒），失败时 `source_error` 给出原因。
+
+### `PUT /api/settings`
+
+部分更新（未提供的键保持当前值；`match` 对象按字段合并）。校验失败返回 `400` 与具体字段名。
+
+```json
+{
+  "dry_run": false,
+  "interval_seconds": 120,
+  "users": [{"fnos_user": "wwb051221", "account": "main", "enabled": true, "watch_ratio": 0.95}]
+}
+```
+
+约束：`interval_seconds` 30–86400、`watch_ratio` 0.05–1、`min_position_seconds` 0–3600、
+`min_episodes` 1–1000、`match.min_score`/`min_margin` 0–1、`match.search_limit` 1–20、
+`users` 至少一条且账号必须存在。
+
+### `POST /api/settings/reset`
+
+清除运行时覆盖层，恢复为 `config.toml` 的值。
+
+```json
+200 {"ok": true, "values": {...}, "accounts": ["main"]}
+```
+
+### `GET /api/source-users?refresh=1`
+
+返回媒体库用户列表（`refresh=1` 跳过 60 秒缓存）。与 `/api/settings` 里的 `source` 结构相同。
+
 ## 示例
 
 ```bash

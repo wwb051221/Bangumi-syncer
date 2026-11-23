@@ -100,7 +100,7 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .muted { color: var(--muted); }
 .mono, code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-code { background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: .85em; }
+code { background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: .85em; overflow-wrap: anywhere; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 1rem 0; }
 
 /* ---------------------------------------------------------------- topbar */
@@ -151,6 +151,14 @@ h3 { font-size: .92rem; margin: 1rem 0 .5rem; color: var(--text); }
 .grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); }
 .split { display: grid; gap: 1.2rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
 .actions { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+
+.settings-actions {
+  position: sticky; bottom: 0; z-index: 4;
+  margin-top: 1rem; padding: .7rem 0;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 16px -12px rgba(0, 0, 0, .4);
+}
 
 /* ---------------------------------------------------------------- cards */
 .card {
@@ -269,7 +277,7 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); }
 input[type="range"] { accent-color: var(--accent); }
 
 /* ------------------------------------------------------------- API guide */
-.steps { margin: 0; padding-left: 1.2rem; }
+.steps { margin: 0; padding-left: 1.2rem; overflow-wrap: anywhere; }
 .steps li { margin: .5rem 0; }
 pre.snippet {
   background: var(--code-bg); border: 1px solid var(--line); border-radius: .5rem;

@@ -553,7 +553,7 @@ function viewSettings() {
     '不要把 App Secret 提交到公开仓库（<code>.env</code> 已被 <code>.gitignore</code> 忽略）。</p>' +
     '</div></div>';
 
-  html += '<div class="actions" style="position:sticky;bottom:0;padding:.8rem 0;background:var(--bg)">' +
+  html += '<div class="actions settings-actions" id="settings-actions">' +
     '<button class="btn primary" data-action="save-settings">保存设置</button>' +
     '<button class="btn" data-action="reset-settings">恢复 config.toml 默认</button>' +
     '<span class="muted" style="font-size:.8rem">保存后立即生效（下一轮同步）</span></div>';
@@ -646,9 +646,13 @@ async function loadSettings() {
 }
 
 async function saveSettings(button) {
+  const payload = collectSettings();
+  if (!payload.dry_run && (state.settings.values || {}).dry_run) {
+    if (!confirm('关闭演练模式后，下一轮同步会真正写入 Bangumi。确定继续？')) return;
+  }
   button.disabled = true;
   try {
-    const data = await apiSend('PUT', '/api/settings', collectSettings());
+    const data = await apiSend('PUT', '/api/settings', payload);
     state.settings = { ...state.settings, values: data.values, accounts: data.accounts };
     buildUserRows();
     toast('设置已保存，下一轮同步生效', 'ok');

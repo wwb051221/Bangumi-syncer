@@ -7,12 +7,15 @@
 
 ### 新增
 
-- **Web 管理界面**（`http://<nas>:8099/`，原生 JS SPA，无构建步骤）：概览、待复核（点选候选
-  即可确认映射、支持区间拆分与手动 subject id）、映射管理（增删/搜索 Bangumi 条目）、
-  账号令牌状态、实时日志、只读配置，以及「立即同步」按钮。
-- 配套 HTTP API：`/api/status`、`/api/logs`、`/api/search`、`POST /api/run`、
-  `POST|DELETE /api/map`、`DELETE /api/candidates`；写操作要求 `X-Requested-With` 头。
-  文档见 [docs/api.md](docs/api.md)。
+- **可视化设置页**：在线修改同步开关/间隔/阈值、匹配参数、媒体库目录、飞牛用户；保存在状态库的
+  运行时覆盖层里，**改完下一轮同步即生效，无需重启容器**；可一键恢复 `config.toml` 默认值。
+- **飞牛影视用户选择**：设置页直接读取媒体库中的真实账号列表（播放记录数、已看完数），
+  勾选参与同步的用户、指定 Bangumi 账号、单独设置观看阈值；媒体库里已消失的账号会被标注。
+- **深浅色与界面个性化**：跟随系统 / 浅色 / 深色三档，主题色（6 个预设 + 自定义）、字号 85%–125%、
+  舒适/紧凑密度；主题在首屏渲染前应用（无闪白），个性化保存在浏览器 localStorage。
+- **Bangumi API 获取指引**：设置页内置建应用步骤、回调地址、`.env` 模板与 `oauth` 命令，
+  每项都可一键复制。
+- 新增接口：`GET/PUT /api/settings`、`POST /api/settings/reset`、`GET /api/source-users`。
 
 ### 修复
 

@@ -113,12 +113,28 @@ docker compose logs -f
 | **映射** | 新增/覆盖映射、按关键词搜索 Bangumi 条目并回填、删除映射（同时清该区间推送记录） |
 | **账号** | 令牌状态与过期时间、复制授权命令 |
 | **日志** | 最近 400 行实时日志（2 秒刷新） |
-| **设置** | 打码后的运行配置、常用命令 |
+| **设置** | **在线修改同步/匹配/目录/用户**（存状态库、立即生效）、**飞牛用户勾选**、**深浅色与个性化**、**Bangumi API 获取指引** |
+
+设置页里的修改会作为「运行时覆盖」存进状态库，**不需要重启容器**；点「恢复 config.toml 默认」可撤销。
+外观（主题/主题色/字号/密度）只存在本机浏览器，跟随系统或手动指定三档深浅色，首屏渲染前应用、不会闪白。
 
 右上角「立即同步」会让常驻循环立刻跑一轮（最多等 0.5 秒），适合刚看完一集时手动触发。
 
 > 页面**没有登录鉴权**，请只在局域网暴露（或把 `server.listen` 改成 `127.0.0.1:8099` 后用 SSH 隧道）。
 > 写操作要求自定义请求头 `X-Requested-With`，跨站表单无法直接调用；接口清单见 [docs/api.md](docs/api.md)。
+
+### 界面预览
+
+| 设置页（浅色） | 概览（深色） |
+| --- | --- |
+| ![设置页浅色](docs/screenshots/settings-light.png) | ![概览深色](docs/screenshots/overview-dark.png) |
+
+手机端（390×844，深色）：
+
+<img src="docs/screenshots/mobile-settings-dark.png" width="320" alt="移动端设置页">
+
+主题支持「跟随系统 / 浅色 / 深色」，另有 6 种主题色 + 自定义取色、85%–125% 字号、舒适/紧凑密度。
+已在 **320 / 390 / 768 / 1024 / 1366 / 1920 / 2560** 宽度下逐档验证，均无横向溢出（见 [验证记录](docs/verification.md)）。
 
 前端是原生 JS 单页应用，**没有构建步骤**、没有 Node 依赖，静态资源随 Python 包一起分发。
 
@@ -312,7 +328,7 @@ docker build --build-arg BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim \
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-python -m pytest            # 114 个用例，全部离线（含模拟 fnOS 库）
+python -m pytest            # 132 个用例，全部离线（含模拟 fnOS 库）
 ruff check src tests
 ```
 
@@ -329,7 +345,7 @@ src/bangumi_syncer/
   state.py         SQLite 状态（令牌/映射/推送/候选/运行）
   server.py        只读状态页 + JSON
   cli.py           命令行
-tests/             114 个离线用例（真实 schema 的模拟库 + 假 tracker）
+tests/             132 个离线用例（真实 schema 的模拟库 + 假 tracker）
 docs/              架构、匹配算法、飞牛库结构
 ```
 

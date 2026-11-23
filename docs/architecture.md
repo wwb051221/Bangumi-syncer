@@ -71,6 +71,21 @@ SyncEngine.run()
 * 日志页数据来自挂在 root logger 上的环形缓冲 handler（500 行），随 `StatusServer.stop()` 移除。
 * 接口清单见 [api.md](api.md)。
 
+## 运行时设置（Web 可编辑）
+
+`config.toml` 仍是密钥、挂载与监听地址的来源；其余运维参数由 `settings.py` 的
+`SettingsManager` 管理：
+
+* 启动时读取状态库 `meta.runtime_settings`（JSON），校验后**直接改写内存里的 `Config` 对象**；
+* 同步引擎每轮都从 `Config` 读取参数，因此保存后下一轮即生效，不需要重启容器；
+* 修改通过 `PUT /api/settings` 提交，校验失败返回 400 与具体字段；
+* 「飞牛用户」列表由 `GET /api/source-users` 现读媒体库得到（缓存 60 秒），
+  设置页把「媒体库真实账号」与「当前配置用户」取并集，媒体库中已消失的账号会被标注；
+* `POST /api/settings/reset` 删除覆盖层并恢复启动时的基线值（来自 `config.toml`）。
+
+前端个性化（主题、主题色、字号、密度）只存在浏览器 `localStorage`，不写入服务端；
+`index.html` 里有一段内联引导脚本，在首屏渲染前应用主题，避免闪白。
+
 ## 扩展点
 
 ### 新的媒体服务器
@@ -126,4 +141,4 @@ class JellyfinSource(SourceAdapter):
 * `test_cli.py` 直接调 `cli.main([...])` 跑 `dump` / `status` / `map` / `review` / `run --once`，
   验证退出码与输出（不联网）。
 * 覆盖：快照解析、过滤、比例判定、区间映射、幂等、远端核对、收藏完成、鉴权失败、限速重试。
-* 全部离线（114 个用例，约 13 秒）。
+* 全部离线（132 个用例，约 17 秒）。

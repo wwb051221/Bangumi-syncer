@@ -135,13 +135,24 @@ Open `http://<nas>:8099/` after the container starts:
 - **Mappings** — create/override/delete mappings, search Bangumi by keyword, see push counters.
 - **Accounts** — token state and expiry, copy-paste authorisation command.
 - **Logs** — last 400 log lines, refreshed every 2 s.
-- **Settings** — redacted runtime config and common commands.
+- **Settings** — edit sync/match/library/user settings online (persisted in the state DB, applied
+  on the next cycle **without a restart**), pick which fnOS users to sync, light/dark theme,
+  accent colour, font scale and density, plus a step-by-step Bangumi API guide.
 
 The **Sync now** button in the header wakes the loop immediately (≤0.5 s).
 
 The page has no login: keep it on the LAN (or bind `server.listen` to `127.0.0.1` and use an SSH
 tunnel). Write endpoints require the `X-Requested-With` header, so a cross-site form cannot call
 them. See [docs/api.md](docs/api.md). The SPA is plain JavaScript with **no build step**.
+
+### Screenshots
+
+| Settings (light) | Overview (dark) |
+| --- | --- |
+| ![settings](docs/screenshots/settings-light.png) | ![overview](docs/screenshots/overview-dark.png) |
+
+Light/dark/auto themes, six accent colours plus a custom picker, 85–125% font scale and a compact
+density are all persisted per browser. Responsive down to 320 px wide.
 
 ## Commands
 
@@ -170,7 +181,7 @@ Exit codes: `0` ok, `1` run failed, `2` config error, `3` re-authorisation neede
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest        # 114 offline tests (synthetic fnOS DB + fake tracker)
+python -m pytest        # 132 offline tests (synthetic fnOS DB + fake tracker)
 ruff check src tests
 ```
 
