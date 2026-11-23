@@ -109,3 +109,18 @@ def test_source_users_come_from_the_media_server(manager):
     assert alice["finished"] == 3
     assert source["seasons"] == 2
     assert source["episodes"] == 76
+
+
+def test_source_users_include_the_folder_tree(manager):
+    instance, _cfg, _store = manager
+    folders = instance.source_users()["folders"]
+    assert folders["series"] == 3  # two anime seasons + one drama
+    root = folders["roots"][0]
+    assert root["path"] == "/vol1/1000/影片"
+    assert {child["path"] for child in root["children"]} == {
+        "/vol1/1000/影片/动漫",
+        "/vol1/1000/影片/电视剧/大明王朝1566",
+    }
+    anime = next(child for child in root["children"] if child["name"] == "动漫")
+    assert anime["series"] == 2
+    assert anime["episodes"] == 76

@@ -492,3 +492,48 @@ pre.json {
   th, td { padding: .35rem .45rem; font-size: .82rem; }
   .btn { padding: .3rem .55rem; }
 }
+
+/* --------------------------------------------------- library folder picker */
+.path-pickers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; margin-top: .6rem; }
+.path-picker {
+  border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: var(--panel-2); padding: .65rem; min-width: 0;
+}
+.path-picker-head { display: flex; align-items: center; gap: .45rem; margin-bottom: .5rem; flex-wrap: wrap; }
+.path-picker-head strong { font-size: .9rem; }
+.path-picker-head .actions { margin-left: auto; display: flex; gap: .35rem; }
+.path-tree {
+  max-height: 16rem; overflow: auto; border: 1px solid var(--line);
+  border-radius: var(--radius-sm); background: var(--code-bg); padding: .35rem;
+}
+.tree-node { min-width: 0; }
+.tree-row {
+  display: flex; align-items: flex-start; gap: .45rem;
+  padding: .28rem .3rem; border-radius: var(--radius-sm); cursor: pointer;
+}
+.tree-row:hover { background: var(--hover); }
+.tree-row.covered { opacity: .62; cursor: default; }
+.tree-row input { margin-top: .15rem; flex: none; }
+.tree-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.tree-name { font-size: .84rem; overflow-wrap: anywhere; }
+.tree-path { font-size: .7rem; color: var(--muted); overflow-wrap: anywhere; }
+.tree-count { font-size: .7rem; color: var(--muted); white-space: nowrap; margin-left: .4rem; }
+.tree-note { font-size: .68rem; color: var(--muted); margin: 0 0 .2rem 1.7rem; }
+.tree-children { margin-left: .85rem; border-left: 1px dashed var(--line); padding-left: .45rem; }
+.path-chips { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+.path-chip {
+  display: inline-flex; align-items: center; gap: .3rem; max-width: 100%;
+  background: var(--accent-soft); border: 1px solid var(--line);
+  border-radius: var(--radius-pill); padding: .15rem .3rem .15rem .55rem; font-size: .74rem;
+}
+.path-chip-text { overflow-wrap: anywhere; }
+.path-chip button {
+  border: 0; background: transparent; color: var(--muted);
+  cursor: pointer; font-size: .9rem; line-height: 1; padding: 0 .2rem;
+}
+.path-chip button:hover { color: var(--bad); }
+.path-add { display: flex; gap: .4rem; margin-top: .5rem; }
+.path-add input { flex: 1; min-width: 0; font-size: .8rem; }
+@media (max-width: 900px) {
+  .path-pickers { grid-template-columns: 1fr; }
+}

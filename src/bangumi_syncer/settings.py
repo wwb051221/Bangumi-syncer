@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import threading
 import time
+from dataclasses import replace
 from typing import Any
 
 from . import sources
 from .config import Config, UserConfig
+from .folders import build_folder_tree
 from .log import get_logger
 from .models import is_watched
 from .state import StateStore
@@ -245,10 +247,24 @@ class SettingsManager:
                 "finished": sum(1 for play in plays if is_watched(play, ratio, min_position)),
             })
         users.sort(key=lambda item: (-item["plays"], item["name"]))
+
+        # The picker must also show folders that are currently filtered out,
+        # otherwise an excluded library could never be re-enabled.
+        tree_series = snapshot.series
+        if self.cfg.source.include_paths or self.cfg.source.exclude_paths:
+            try:
+                unfiltered = replace(self.cfg.source, include_paths=[], exclude_paths=[])
+                extra = sources.create(unfiltered)
+                extra.prepare()
+                tree_series = extra.snapshot().series
+            except Exception as exc:  # noqa: BLE001 - the tree is best effort
+                log.warning("could not read the full library for the folder picker: %s", exc)
+
         payload = {
             "users": users,
             "seasons": len(snapshot.series),
             "episodes": sum(series.episode_count for series in snapshot.series),
+            "folders": build_folder_tree(tree_series),
             "include_paths": list(self.cfg.source.include_paths),
             "at": int(time.time()),
         }

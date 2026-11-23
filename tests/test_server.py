@@ -223,6 +223,8 @@ def test_settings_api_exposes_values_and_source_users(server):
     names = {user["name"] for user in payload["source"]["users"]}
     assert names == {"alice", "bob"}
     assert payload["source"]["episodes"] == 76
+    assert payload["source"]["folders"]["roots"]
+    assert payload["source"]["folders"]["roots"][0]["path"] == "/vol1/1000/影片"
     assert payload["source_error"] is None
 
 

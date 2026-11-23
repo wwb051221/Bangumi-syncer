@@ -29,6 +29,8 @@ const state = {
   settingsError: '',
   settingsLoading: false,
   userRows: [],
+  includePaths: [],
+  excludePaths: [],
   ui: { ...UI_DEFAULT },
   uiRev: -1,
   themeOverride: new URLSearchParams(location.search).get('theme') || '',
@@ -600,6 +602,76 @@ function viewLogs() {
     '<pre class="logs" id="logPane">' + esc((state.status.logs || []).join('\n')) + '</pre></section>';
 }
 
+/* ------------------------------------------------------- library folder picker */
+const PATH_TITLES = { include: '只同步这些目录', exclude: '排除目录' };
+
+function normalisePath(text) {
+  let value = String(text || '').trim().replace(/\\/g, '/');
+  if (!value) return '';
+  if (!value.startsWith('/')) value = '/' + value;
+  return value.replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+}
+
+function pathCovered(path, selected) {
+  return selected.some((prefix) => {
+    const base = String(prefix).replace(/\/+$/, '');
+    return path === base || path.startsWith(base + '/');
+  });
+}
+
+function treeNodeHtml(scope, node, selected) {
+  const covered = pathCovered(node.path, selected);
+  const explicit = selected.includes(node.path);
+  const disabled = covered && !explicit;
+  const children = (node.children || []).map((child) => treeNodeHtml(scope, child, selected)).join('');
+  return '<div class="tree-node">' +
+    '<label class="tree-row' + (disabled ? ' covered' : '') + '">' +
+    '<input type="checkbox" data-action="toggle-path" data-scope="' + scope + '" data-path="' + esc(node.path) + '"' +
+    ((explicit || covered) ? ' checked' : '') + (disabled ? ' disabled' : '') + '>' +
+    '<span class="tree-main"><span class="tree-name">' + esc(node.name) + '</span>' +
+    '<span class="tree-path">' + esc(node.path) + '</span></span>' +
+    '<span class="tree-count">' + num(node.series) + ' 季 · ' + num(node.episodes) + ' 集</span>' +
+    '</label>' +
+    (disabled ? '<div class="tree-note">已由上级目录包含</div>' : '') +
+    (children ? '<div class="tree-children">' + children + '</div>' : '') +
+    '</div>';
+}
+
+function pathChipsHtml(scope, selected) {
+  if (!selected.length) return '<span class="hint">未选择</span>';
+  return selected.map((path) =>
+    '<span class="path-chip" title="' + esc(path) + '"><span class="path-chip-text">' + esc(path) + '</span>' +
+    '<button type="button" data-action="remove-path" data-scope="' + scope + '" data-path="' + esc(path) +
+    '" aria-label="移除">×</button></span>').join('');
+}
+
+function pathPickerBody(scope) {
+  const selected = scope === 'include' ? state.includePaths : state.excludePaths;
+  const folders = (state.settings && state.settings.source && state.settings.source.folders) || { roots: [] };
+  const roots = folders.roots || [];
+  const tree = roots.length
+    ? roots.map((node) => treeNodeHtml(scope, node, selected)).join('')
+    : '<p class="hint">没有读到媒体库目录，可手动添加路径。</p>';
+  return '<div class="path-picker-head"><strong>' + PATH_TITLES[scope] + '</strong>' +
+    '<span class="badge info">' + selected.length + ' 条</span>' +
+    '<span class="actions">' +
+    '<button type="button" class="btn small ghost" data-action="path-roots" data-scope="' + scope + '">选根目录</button>' +
+    '<button type="button" class="btn small ghost" data-action="path-clear" data-scope="' + scope + '">清空</button>' +
+    '</span></div>' +
+    '<div class="path-tree">' + tree + '</div>' +
+    '<div class="chips path-chips">' + pathChipsHtml(scope, selected) + '</div>' +
+    '<form class="path-add" data-scope="' + scope + '">' +
+    '<input placeholder="/vol1/1000/影片/动漫" aria-label="手动添加目录">' +
+    '<button class="btn small" type="submit">添加</button></form>';
+}
+
+function refreshPathPickers() {
+  ['include', 'exclude'].forEach((scope) => {
+    const holder = document.getElementById('picker-' + scope);
+    if (holder) holder.innerHTML = pathPickerBody(scope);
+  });
+}
+
 /* ---------------------------------------------------------------- settings */
 function viewSettings() {
   if (state.settingsError) {
@@ -640,13 +712,16 @@ function viewSettings() {
     '<label class="field">候选数量<input type="number" id="set-searchlimit" min="1" max="20" value="' + esc(values.match ? values.match.search_limit : 8) + '"></label>' +
     '</div><p class="hint">分数低于阈值或前两名过近时不会自动映射，会进入「待复核」。</p></div></div>';
 
-  html += '<div class="section"><h2>媒体库</h2><div class="card"><div class="form-grid wide">' +
-    '<label class="field">只同步这些目录（每行一个）<textarea id="set-include" placeholder="/vol1/1000/影片/动漫">' + esc((values.include_paths || []).join('\n')) + '</textarea></label>' +
-    '<label class="field">排除目录（每行一个）<textarea id="set-exclude" placeholder="（可选）">' + esc((values.exclude_paths || []).join('\n')) + '</textarea></label>' +
+  html += '<div class="section"><h2>媒体库</h2><div class="card">' +
+    '<p class="hint" style="margin-top:0">从媒体库里勾选目录；过滤在读取时生效，<strong>排除优先于包含</strong>。' +
+    '目录来自飞牛影视数据库中的真实文件路径，所以不需要额外挂载媒体目录。</p>' +
+    '<div class="path-pickers">' +
+    '<div class="path-picker" id="picker-include">' + pathPickerBody('include') + '</div>' +
+    '<div class="path-picker" id="picker-exclude">' + pathPickerBody('exclude') + '</div>' +
     '</div><div class="row" style="margin-top:.8rem">' +
     '<label class="check"><input type="checkbox" id="set-skip0"' + (values.skip_season_zero ? ' checked' : '') + '> 跳过特别篇（Season 0）</label>' +
     '<label class="field" style="max-width:9rem">每季最少集数<input type="number" id="set-mineps" min="1" max="1000" value="' + esc(values.min_episodes) + '"></label>' +
-    '</div><p class="hint">留空表示不过滤；路径是飞牛宿主机的绝对路径。</p></div></div>';
+    '</div><p class="hint">勾选父目录会包含其下所有剧集；手动填写的路径可以不在媒体库中，但必须是绝对路径。</p></div></div>';
 
   html += '<div class="section"><h2>飞牛影视用户</h2><div class="card">' +
     '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:.5rem">' +
@@ -762,10 +837,6 @@ function viewSettings() {
 }
 
 /* ------------------------------------------------------------- settings io */
-function splitLines(text) {
-  return String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
-}
-
 function buildUserRows() {
   const values = (state.settings && state.settings.values) || {};
   const source = (state.settings && state.settings.source) || { users: [] };
@@ -816,8 +887,8 @@ function collectSettings() {
     verify_remote: !!($('#set-verify') || {}).checked,
     mark_in_progress: !!($('#set-inprogress') || {}).checked,
     mark_completed: !!($('#set-completed') || {}).checked,
-    include_paths: splitLines(($('#set-include') || {}).value),
-    exclude_paths: splitLines(($('#set-exclude') || {}).value),
+    include_paths: [...state.includePaths],
+    exclude_paths: [...state.excludePaths],
     skip_season_zero: !!($('#set-skip0') || {}).checked,
     min_episodes: Number(($('#set-mineps') || {}).value),
     match,
@@ -837,6 +908,8 @@ async function loadSettings() {
   if (state.tab === 'settings') render();
   try {
     state.settings = await apiGet('/api/settings');
+    state.includePaths = [...(state.settings.values.include_paths || [])];
+    state.excludePaths = [...(state.settings.values.exclude_paths || [])];
     buildUserRows();
   } catch (err) {
     state.settingsError = err.message;
@@ -855,6 +928,8 @@ async function saveSettings(button) {
   try {
     const data = await apiSend('PUT', '/api/settings', payload);
     state.settings = { ...state.settings, values: data.values, accounts: data.accounts };
+    state.includePaths = [...(data.values.include_paths || [])];
+    state.excludePaths = [...(data.values.exclude_paths || [])];
     buildUserRows();
     toast('设置已保存，下一轮同步生效', 'ok');
     render();
@@ -871,6 +946,8 @@ async function resetSettings() {
   try {
     const data = await apiSend('POST', '/api/settings/reset');
     state.settings = { ...state.settings, values: data.values, accounts: data.accounts };
+    state.includePaths = [...(data.values.include_paths || [])];
+    state.excludePaths = [...(data.values.exclude_paths || [])];
     buildUserRows();
     toast('已恢复 config.toml 默认值');
     render();
@@ -1537,6 +1614,32 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (action === 'path-roots' || action === 'path-clear') {
+    const scope = target.dataset.scope;
+    const list = scope === 'include' ? state.includePaths : state.excludePaths;
+    list.length = 0;
+    if (action === 'path-roots') {
+      const folders = (state.settings && state.settings.source && state.settings.source.folders) || { roots: [] };
+      const paths = (folders.roots || []).map((node) => node.path);
+      if (!paths.length) {
+        toast('没有读取到媒体库目录，请手动添加', 'err');
+        return;
+      }
+      paths.forEach((path) => list.push(path));
+    }
+    refreshPathPickers();
+    return;
+  }
+
+  if (action === 'remove-path') {
+    const scope = target.dataset.scope;
+    const list = scope === 'include' ? state.includePaths : state.excludePaths;
+    const index = list.indexOf(target.dataset.path);
+    if (index >= 0) list.splice(index, 1);
+    refreshPathPickers();
+    return;
+  }
+
   if (action === 'bg-recrop') {
     await openCropCurrent();
     return;
@@ -1643,6 +1746,20 @@ document.addEventListener('change', (event) => {
     return;
   }
 
+  if (target.dataset && target.dataset.action === 'toggle-path') {
+    const scope = target.dataset.scope;
+    const list = scope === 'include' ? state.includePaths : state.excludePaths;
+    const path = target.dataset.path;
+    const index = list.indexOf(path);
+    if (target.checked) {
+      if (index < 0) list.push(path);
+    } else if (index >= 0) {
+      list.splice(index, 1);
+    }
+    refreshPathPickers();
+    return;
+  }
+
   const row = target.closest('tr[data-user]');
   if (row) {
     const name = row.dataset.user;
@@ -1682,6 +1799,18 @@ document.addEventListener('input', (event) => {
 });
 
 document.addEventListener('submit', async (event) => {
+  if (event.target.classList.contains('path-add')) {
+    event.preventDefault();
+    const scope = event.target.dataset.scope;
+    const input = event.target.querySelector('input');
+    const path = normalisePath(input && input.value);
+    if (!path) return;
+    const list = scope === 'include' ? state.includePaths : state.excludePaths;
+    if (!list.includes(path)) list.push(path);
+    refreshPathPickers();
+    return;
+  }
+
   if (event.target.id === 'mapForm') {
     event.preventDefault();
     const payload = {
