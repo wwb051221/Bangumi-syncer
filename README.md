@@ -139,7 +139,9 @@ Open `http://<nas>:8099/` after the container starts:
   on the next cycle **without a restart**). The media-library filter is a **visual folder tree**
   built from the real episode paths in the fnOS database: tick a parent folder to include everything
   below it, exclude subfolders, see season/episode counts per folder, and add paths manually.
-  A step-by-step Bangumi API guide is included too.
+  A step-by-step Bangumi API guide is included too, and **Bangumi authorization can be completed
+  in the browser** (App ID/Secret, authorize link, paste the callback code) without SSH or editing
+  `.env`; the CLI guide remains available for reference.
 - **Appearance** (stored server-side, shared by every device) — auto/light/dark theme, six accent
   colours plus a custom picker, 85–125% font scale, comfortable/compact density; custom background
   via **upload (with crop dialog) / image URL / four built-in gradient presets** with opacity, blur
@@ -196,7 +198,7 @@ Exit codes: `0` ok, `1` run failed, `2` config error, `3` re-authorisation neede
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest        # 160 offline tests (synthetic fnOS DB + fake tracker)
+python -m pytest        # 165 offline tests (synthetic fnOS DB + fake tracker)
 ruff check src tests
 ```
 

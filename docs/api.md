@@ -178,6 +178,54 @@ Bangumi 侧失败时返回 `502`。
 
 返回媒体库用户列表与目录树（`refresh=1` 跳过 60 秒缓存）。与 `/api/settings` 里的 `source` 结构相同。
 
+## Bangumi 授权接口
+
+网页端填写 OAuth 应用凭据并完成授权，凭据存入状态库 `meta.oauth_clients`（按账号）。
+**App Secret 只写不读**：任何响应都不会返回它。
+
+### `GET /api/oauth`
+
+```json
+{"accounts": [{
+  "name": "main", "client_id": "12345", "has_secret": true,
+  "redirect_uri": "http://127.0.0.1:8765/oauth/callback",
+  "has_token": false, "expires_at": null, "remote_user": null
+}]}
+```
+
+`client_id` 来自网页保存值或 `config.toml`/环境变量（后者作为回退）。
+
+### `PUT /api/oauth`
+
+保存某个账号的 OAuth 应用凭据。`client_secret` 为空时保留已保存的 secret：
+
+```json
+{"account": "main", "client_id": "12345", "client_secret": "…",
+ "redirect_uri": "http://127.0.0.1:8765/oauth/callback"}
+```
+
+返回 `{"ok": true, "oauth": {...}}`；回调地址必须是 `http(s)` URL。
+
+### `POST /api/oauth/start`
+
+```json
+{"account": "main"}
+→ {"ok": true, "url": "https://bgm.tv/oauth/authorize?client_id=…&response_type=code&…"}
+```
+
+未保存 App ID / Secret 时返回 `400`。
+
+### `POST /api/oauth/exchange`
+
+粘贴回调地址或裸 `code` 均可（服务端会提取 `code` 参数）：
+
+```json
+{"account": "main", "code": "http://127.0.0.1:8765/oauth/callback?code=…&state=…"}
+→ {"ok": true, "oauth": {...}, "tokens": 已写入状态库}
+```
+
+失败（code 过期/已使用、凭据不匹配）返回 `400` 与 Bangumi 的具体错误。
+
 ## 外观接口（服务器端保存）
 
 外观配置保存在状态库 `meta.ui_prefs`，背景图片保存在 `<state 目录>/assets/background.bin`，
