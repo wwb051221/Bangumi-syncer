@@ -203,6 +203,7 @@ Bangumi 侧失败时返回 `502`。
 三种写法：
 
 * **上传图片**（推荐）：请求体是二进制，`Content-Type: image/png|jpeg|webp|gif`，≤ 8 MB；
+  网页端会先在浏览器里裁剪成 JPEG（最长边 2560px）再上传，接口仍按原始二进制校验；
 * **图片 URL**：`{"url": "https://example.com/a.jpg"}`，服务端下载后保存（避免跨域/图床失效）；
 * **内置预设**：`{"preset": "mist"}`，可选 `mist` / `dusk` / `ocean` / `paper`。
 

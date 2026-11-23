@@ -140,8 +140,10 @@ Open `http://<nas>:8099/` after the container starts:
   Bangumi API guide.
 - **Appearance** (stored server-side, shared by every device) — auto/light/dark theme, six accent
   colours plus a custom picker, 85–125% font scale, comfortable/compact density; custom background
-  via **upload / image URL / four built-in gradient presets** with opacity, blur and scrim controls,
-  and **Morandi palette extraction from the background** that can be applied as the accent colour.
+  via **upload (with crop dialog) / image URL / four built-in gradient presets** with opacity, blur
+  and scrim controls, and **Morandi palette extraction from the background** that can be applied as
+  the accent colour. The crop dialog supports drag, wheel/slider zoom, 16:9 / 21:9 / 4:3 / 1:1 and
+  live previews of both the crop and the resulting page.
 
 The **Sync now** button in the header wakes the loop immediately (≤0.5 s).
 
