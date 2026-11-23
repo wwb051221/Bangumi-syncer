@@ -1,6 +1,7 @@
-# syntax=docker/dockerfile:1
-
-FROM python:3.12-slim
+# Base image can be swapped for a registry mirror, e.g.
+#   docker build --build-arg BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim .
+ARG BASE_IMAGE=python:3.12-slim
+FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="Bangumi-syncer"
 LABEL org.opencontainers.image.description="Sync fnOS (飞牛影视) anime watch progress to Bangumi"

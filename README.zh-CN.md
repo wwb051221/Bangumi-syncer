@@ -258,6 +258,20 @@ bangumi-syncer oauth --account X   # 授权（--manual 适合远程 SSH）
 </details>
 
 <details>
+<summary><b>构建时拉不到 python:3.12-slim（国内网络）</b></summary>
+
+飞牛等国内环境的 Docker 可能走镜像源。构建时覆盖基础镜像即可：
+
+```bash
+docker build --build-arg BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim \
+             -t bangumi-syncer:dev .
+```
+
+或在 `docker-compose.yml` 的 `build.args.BASE_IMAGE` 里填写（注释已给出示例）。
+程序本身运行时只访问 `api.bgm.tv`，不需要任何代理。
+</details>
+
+<details>
 <summary><b>飞牛升级后报 schema 变化</b></summary>
 
 报错会列出缺失的表/列。先在 `dump` 里确认新结构，然后按 [docs/schema.md](docs/schema.md)

@@ -74,6 +74,14 @@ bangumi-syncer --config config.toml run --once
 The process needs read access to `trimmedia.db` (root, or `source.mode = "snapshot"` with a
 copy prepared elsewhere).
 
+### Build it yourself
+
+```bash
+docker build -t bangumi-syncer .
+# registry mirror (e.g. behind the GFW):
+docker build --build-arg BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim -t bangumi-syncer .
+```
+
 ## Multi-user
 
 ```toml
