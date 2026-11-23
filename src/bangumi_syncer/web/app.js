@@ -632,13 +632,14 @@ function viewSettings() {
       ({ mist: '晨雾', dusk: '暮色', ocean: '深海', paper: '纸感' })[key] + '</option>').join('') +
     '</select>' +
     '<button class="btn small" data-action="bg-preset">使用预设</button>' +
+    (bg.mode === 'image' ? '<button class="btn small" data-action="bg-recrop">重新裁剪</button>' : '') +
     '<button class="btn small danger" data-action="bg-clear">清除背景</button>' +
     '</div>' +
     '<div class="form-grid" style="margin-top:.7rem">' +
-    '<label class="field">上传图片（PNG/JPEG/WebP，≤8 MB）<input type="file" id="bg-file" accept="image/*"></label>' +
+    '<label class="field">上传图片（先裁剪，≤20 MB）<input type="file" id="bg-file" accept="image/*"></label>' +
     '<label class="field">或图片 URL<input id="bg-url" placeholder="https://…"></label>' +
     '</div><div class="row" style="margin-top:.45rem"><button class="btn small" data-action="bg-url">从 URL 加载</button>' +
-    '<span class="hint">下载后保存到服务器，避免跨域与图床失效。</span></div>' +
+    '<span class="hint">选择图片后会打开裁剪窗口：可拖动、缩放、选比例并实时预览。下载后保存到服务器。</span></div>' +
     '</div>' +
     '<div><div class="slider-row"><span class="muted" style="width:4.5rem">不透明度</span>' +
     '<input type="range" data-role="bg-opacity" min="0.05" max="1" step="0.05" value="' + esc(bg.opacity) + '">' +
@@ -912,28 +913,353 @@ async function extractPalette() {
 }
 
 /* -------------------------------------------------------------- background */
-async function uploadBackground(file) {
+async function uploadBackgroundBlob(blob, contentType) {
+  if (!blob) throw new Error('empty image');
+  if (blob.size > 8 * 1024 * 1024) throw new Error('图片超过 8 MB');
+  const response = await fetch('/api/ui/background', {
+    method: 'PUT',
+    headers: { ...CSRF, 'Content-Type': contentType || blob.type || 'application/octet-stream' },
+    body: blob,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || response.statusText);
+  applyUi(data.ui);
+  return data.ui;
+}
+
+/* ------------------------------------------------------------------- crop */
+const CROP_RATIOS = [['16:9', 16 / 9], ['21:9', 21 / 9], ['4:3', 4 / 3], ['1:1', 1]];
+const crop = { img: null, ratio: 16 / 9, zoom: 1, minScale: 1, tx: 0, ty: 0, w: 0, h: 0, objectUrl: '' };
+let cropRaf = 0;
+
+function ensureCropModal() {
+  if (document.getElementById('crop-modal')) return;
+  const ratios = CROP_RATIOS.map(([label, value], index) =>
+    '<button type="button" data-ratio="' + value + '" class="' + (index === 0 ? 'active' : '') + '">' +
+    label + '</button>').join('');
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal" id="crop-modal" hidden>
+      <div class="modal-card">
+        <header class="modal-head">
+          <strong>裁剪背景</strong>
+          <span class="muted" id="crop-dims" style="font-size:.8rem"></span>
+          <span style="flex:1"></span>
+          <button class="btn small ghost" data-crop="close">关闭</button>
+        </header>
+        <div class="crop-body">
+          <div class="crop-stage" id="crop-stage"><canvas id="crop-canvas"></canvas></div>
+          <aside class="crop-side">
+            <div>
+              <div class="field">裁剪比例</div>
+              <div class="seg" id="crop-ratios">${ratios}</div>
+            </div>
+            <div class="slider-row">
+              <span class="muted" style="width:3.5rem">缩放</span>
+              <input type="range" id="crop-zoom" min="1" max="3" step="0.01" value="1">
+              <span class="value" id="crop-zoom-value">100%</span>
+            </div>
+            <div class="field">裁剪预览<canvas id="crop-preview" width="640" height="360"></canvas></div>
+            <div class="field">页面效果
+              <div class="crop-page-preview" id="crop-page-preview">
+                <div class="crop-page-scrim"></div>
+                <div class="crop-page-panel">Bangumi-syncer · 面板文字预览</div>
+              </div>
+            </div>
+            <p class="hint" style="margin:0">拖动图片调整位置，滚轮或滑杆缩放；输出为 JPEG，最长边 2560px。</p>
+          </aside>
+        </div>
+        <footer class="modal-foot">
+          <button class="btn ghost" data-crop="reset">重置</button>
+          <span style="flex:1"></span>
+          <button class="btn" data-crop="close">取消</button>
+          <button class="btn primary" data-crop="confirm">使用此裁剪</button>
+        </footer>
+      </div>
+    </div>`);
+
+  const modal = document.getElementById('crop-modal');
+  modal.addEventListener('click', (event) => {
+    const actionButton = event.target.closest('[data-crop]');
+    if (actionButton) {
+      if (actionButton.dataset.crop === 'close') closeCrop();
+      if (actionButton.dataset.crop === 'reset') resetCrop();
+      if (actionButton.dataset.crop === 'confirm') confirmCrop();
+      return;
+    }
+    const ratioButton = event.target.closest('[data-ratio]');
+    if (ratioButton) {
+      crop.ratio = Number(ratioButton.dataset.ratio);
+      document.querySelectorAll('#crop-ratios button').forEach((node) => {
+        node.classList.toggle('active', node === ratioButton);
+      });
+      layoutCrop(true);
+      return;
+    }
+    if (event.target === modal) closeCrop();
+  });
+
+  document.getElementById('crop-zoom').addEventListener('input', (event) => {
+    setCropZoom(Number(event.target.value));
+  });
+  bindCropDrag(document.getElementById('crop-canvas'));
+  window.addEventListener('resize', () => {
+    if (!modal.hidden) layoutCrop(true);
+  });
+}
+
+function bindCropDrag(canvas) {
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
+  canvas.addEventListener('pointerdown', (event) => {
+    dragging = true;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    canvas.setPointerCapture(event.pointerId);
+    canvas.classList.add('dragging');
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!dragging) return;
+    crop.tx += event.clientX - lastX;
+    crop.ty += event.clientY - lastY;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    clampCrop();
+    drawCrop();
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    canvas.classList.remove('dragging');
+    updateCropPreviews();
+  };
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    setCropZoom(crop.zoom * (event.deltaY < 0 ? 1.08 : 1 / 1.08));
+  }, { passive: false });
+}
+
+async function openCropFromFile(file) {
   if (!file) return;
-  if (file.size > 8 * 1024 * 1024) {
-    toast('图片超过 8 MB', 'err');
+  if (file.size > 20 * 1024 * 1024) {
+    toast('图片超过 20 MB', 'err');
     return;
   }
+  crop.objectUrl = URL.createObjectURL(file);
+  await openCropUrl(crop.objectUrl);
+}
+
+async function openCropCurrent() {
+  const bg = state.ui.background || {};
+  if (bg.mode !== 'image' || !bg.url) {
+    toast('当前没有背景图片', 'err');
+    return;
+  }
+  crop.objectUrl = '';
+  await openCropUrl(bg.url + (bg.url.includes('?') ? '&' : '?') + 't=' + Date.now());
+}
+
+async function openCropUrl(src) {
+  ensureCropModal();
   try {
-    const response = await fetch('/api/ui/background', {
-      method: 'PUT',
-      headers: { ...CSRF, 'Content-Type': file.type || 'application/octet-stream' },
-      body: file,
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error('无法读取图片'));
+      image.src = src;
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || response.statusText);
-    applyUi(data.ui);
-    toast('背景已上传并保存到服务器');
-    render();
+    crop.img = image;
+    crop.ratio = 16 / 9;
+    crop.zoom = 1;
+    crop.tx = 0;
+    crop.ty = 0;
+    document.querySelectorAll('#crop-ratios button').forEach((node, index) => {
+      node.classList.toggle('active', index === 0);
+    });
+    const modal = document.getElementById('crop-modal');
+    modal.hidden = false;
+    document.getElementById('crop-dims').textContent = image.width + '×' + image.height;
+    layoutCrop(false);
   } catch (err) {
-    toast('上传失败：' + err.message, 'err');
+    toast('打开裁剪失败：' + err.message, 'err');
   }
 }
 
+function layoutCrop(keepPosition) {
+  if (!crop.img) return;
+  const stage = document.getElementById('crop-stage');
+  const canvas = document.getElementById('crop-canvas');
+  const maxWidth = Math.max(240, stage.clientWidth - 2);
+  const maxHeight = Math.max(200, Math.min(window.innerHeight * 0.52, 560));
+  let width = maxWidth;
+  let height = width / crop.ratio;
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * crop.ratio;
+  }
+  crop.w = Math.round(width);
+  crop.h = Math.round(height);
+  canvas.style.width = crop.w + 'px';
+  canvas.style.height = crop.h + 'px';
+  canvas.width = crop.w;
+  canvas.height = crop.h;
+  crop.minScale = Math.max(crop.w / crop.img.width, crop.h / crop.img.height);
+  if (!keepPosition) {
+    crop.zoom = 1;
+    crop.tx = 0;
+    crop.ty = 0;
+  }
+  clampCrop();
+  drawCrop();
+  updateCropPreviews();
+  setZoomUi();
+}
+
+function clampCrop() {
+  const scale = crop.minScale * crop.zoom;
+  const displayW = crop.img.width * scale;
+  const displayH = crop.img.height * scale;
+  const maxX = Math.max(0, (displayW - crop.w) / 2);
+  const maxY = Math.max(0, (displayH - crop.h) / 2);
+  crop.tx = Math.min(maxX, Math.max(-maxX, crop.tx));
+  crop.ty = Math.min(maxY, Math.max(-maxY, crop.ty));
+}
+
+function setCropZoom(value) {
+  if (!crop.img) return;
+  crop.zoom = Math.min(3, Math.max(1, value));
+  clampCrop();
+  drawCrop();
+  updateCropPreviews();
+  setZoomUi();
+}
+
+function setZoomUi() {
+  const slider = document.getElementById('crop-zoom');
+  if (slider) slider.value = String(crop.zoom);
+  const label = document.getElementById('crop-zoom-value');
+  if (label) label.textContent = Math.round(crop.zoom * 100) + '%';
+  const dims = document.getElementById('crop-dims');
+  if (dims && crop.img) {
+    const rect = cropSourceRect();
+    dims.textContent = crop.img.width + '×' + crop.img.height + ' · 裁剪 ' +
+      Math.round(rect.sw) + '×' + Math.round(rect.sh);
+  }
+}
+
+function drawCrop() {
+  cancelAnimationFrame(cropRaf);
+  cropRaf = requestAnimationFrame(() => {
+    const canvas = document.getElementById('crop-canvas');
+    if (!canvas || !crop.img) return;
+    const ctx = canvas.getContext('2d');
+    const scale = crop.minScale * crop.zoom;
+    const displayW = crop.img.width * scale;
+    const displayH = crop.img.height * scale;
+    const dx = (crop.w - displayW) / 2 + crop.tx;
+    const dy = (crop.h - displayH) / 2 + crop.ty;
+    ctx.clearRect(0, 0, crop.w, crop.h);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--code-bg') || '#111';
+    ctx.fillRect(0, 0, crop.w, crop.h);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(crop.img, dx, dy, displayW, displayH);
+  });
+}
+
+function cropSourceRect() {
+  const scale = crop.minScale * crop.zoom;
+  const displayW = crop.img.width * scale;
+  const displayH = crop.img.height * scale;
+  const dx = (crop.w - displayW) / 2 + crop.tx;
+  const dy = (crop.h - displayH) / 2 + crop.ty;
+  let sx = (-dx) / scale;
+  let sy = (-dy) / scale;
+  const sw = crop.w / scale;
+  const sh = crop.h / scale;
+  sx = Math.max(0, Math.min(sx, crop.img.width - sw));
+  sy = Math.max(0, Math.min(sy, crop.img.height - sh));
+  return { sx, sy, sw, sh };
+}
+
+function cropOutputCanvas(maxWidth) {
+  const { sx, sy, sw, sh } = cropSourceRect();
+  const outWidth = Math.max(320, Math.min(maxWidth || 2560, Math.round(sw)));
+  const outHeight = Math.max(1, Math.round(outWidth / crop.ratio));
+  const canvas = document.createElement('canvas');
+  canvas.width = outWidth;
+  canvas.height = outHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(crop.img, sx, sy, sw, sh, 0, 0, outWidth, outHeight);
+  return canvas;
+}
+
+let previewTimer = 0;
+function updateCropPreviews() {
+  if (!crop.img) return;
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    const out = cropOutputCanvas(640);
+    const preview = document.getElementById('crop-preview');
+    if (preview) {
+      const ctx = preview.getContext('2d');
+      preview.width = out.width;
+      preview.height = out.height;
+      ctx.drawImage(out, 0, 0);
+    }
+    const page = document.getElementById('crop-page-preview');
+    if (page) {
+      page.style.backgroundImage = 'url("' + out.toDataURL('image/jpeg', 0.82) + '")';
+      const scrim = page.querySelector('.crop-page-scrim');
+      if (scrim) scrim.style.opacity = String((state.ui.background && state.ui.background.dim) || 0.45);
+    }
+  }, 60);
+}
+
+function resetCrop() {
+  if (!crop.img) return;
+  crop.zoom = 1;
+  crop.tx = 0;
+  crop.ty = 0;
+  clampCrop();
+  drawCrop();
+  updateCropPreviews();
+  setZoomUi();
+}
+
+function closeCrop() {
+  const modal = document.getElementById('crop-modal');
+  if (modal) modal.hidden = true;
+  if (crop.objectUrl) {
+    URL.revokeObjectURL(crop.objectUrl);
+    crop.objectUrl = '';
+  }
+  crop.img = null;
+}
+
+async function confirmCrop() {
+  if (!crop.img) return;
+  const button = document.querySelector('[data-crop="confirm"]');
+  if (button) button.disabled = true;
+  try {
+    const output = cropOutputCanvas(2560);
+    const blob = await new Promise((resolve) => output.toBlob(resolve, 'image/jpeg', 0.9));
+    if (!blob) throw new Error('生成图片失败');
+    await uploadBackgroundBlob(blob, 'image/jpeg');
+    closeCrop();
+    toast('背景已裁剪并保存到服务器');
+    render();
+  } catch (err) {
+    toast('上传失败：' + err.message, 'err');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+/* -------------------------------------------------------------- background */
 async function setBackgroundUrl() {
   const input = document.getElementById('bg-url');
   const url = (input && input.value || '').trim();
@@ -1088,6 +1414,11 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (action === 'bg-recrop') {
+    await openCropCurrent();
+    return;
+  }
+
   if (action === 'extract-palette') {
     await extractPalette();
     return;
@@ -1184,7 +1515,8 @@ document.addEventListener('change', (event) => {
   }
 
   if (target.id === 'bg-file') {
-    uploadBackground(target.files && target.files[0]);
+    openCropFromFile(target.files && target.files[0]);
+    if (target.value) target.value = '';
     return;
   }
 
