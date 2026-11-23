@@ -514,6 +514,22 @@ details.guide .steps { margin-top: .4rem; }
   .oauth-status { margin-left: 0; }
 }
 
+/* ------------------------------------------------------------------ login */
+.user-box { display: flex; align-items: center; gap: .4rem; margin-left: .3rem; }
+body[data-mode="login"] .tabs,
+body[data-mode="login"] .meta button,
+body[data-mode="login"] #modeBadge,
+body[data-mode="login"] #uptime,
+body[data-mode="login"] #nextRun,
+body[data-mode="login"] #userBox { display: none; }
+.login-wrap { min-height: calc(100vh - 12rem); display: grid; place-items: center; padding: 1rem; }
+.login-card { width: min(390px, 100%); }
+.login-brand { display: flex; align-items: center; gap: .6rem; margin-bottom: .9rem; }
+.login-form { display: flex; flex-direction: column; gap: .7rem; margin-top: .6rem; }
+.login-submit { width: 100%; }
+.login-error { color: var(--bad); font-size: .84rem; margin: 0; }
+.login-error[hidden] { display: none; }
+
 /* --------------------------------------------------- library folder picker */
 .path-pickers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; margin-top: .6rem; }
 .path-picker {

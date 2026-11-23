@@ -30,10 +30,27 @@ def free_port() -> int:
 class Client:
     def __init__(self, base: str) -> None:
         self.base = base
+        self.cookie = ""
+
+    def _headers(self, extra: dict[str, str]) -> dict[str, str]:
+        headers = dict(extra)
+        if self.cookie:
+            headers["Cookie"] = self.cookie
+        return headers
 
     def get(self, path: str):
-        with urllib.request.urlopen(self.base + path, timeout=10) as response:
-            return response.status, response.read()
+        request = urllib.request.Request(self.base + path, headers=self._headers({}))
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                self._remember(response)
+                return response.status, response.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read()
+
+    def _remember(self, response) -> None:
+        cookie = response.headers.get("Set-Cookie")
+        if cookie:
+            self.cookie = cookie.split(";", 1)[0]
 
     def get_json(self, path: str):
         status, body = self.get(path)
@@ -44,21 +61,26 @@ class Client:
         headers = {"Content-Type": "application/json"} if data is not None else {}
         if header:
             headers.update(HEADER)
-        request = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
+        request = urllib.request.Request(self.base + path, data=data, headers=self._headers(headers), method=method)
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
+                self._remember(response)
                 return response.status, json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as exc:
             return exc.code, json.loads(exc.read() or b"{}")
 
     def send_raw(self, method: str, path: str, data: bytes, content_type: str):
         headers = {"Content-Type": content_type, **HEADER}
-        request = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
+        request = urllib.request.Request(self.base + path, data=data, headers=self._headers(headers), method=method)
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
+                self._remember(response)
                 return response.status, json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as exc:
             return exc.code, json.loads(exc.read() or b"{}")
+
+    def login(self, username: str = "admin", password: str = "secret123"):
+        return self.send("POST", "api/auth/login", {"username": username, "password": password})
 
 
 @pytest.fixture()
@@ -77,6 +99,27 @@ def server(tmp_path, fnos_db):
         "candidates": [{"subject_id": 148295, "name": "茶啊二中", "name_cn": "茶啊二中",
                         "year": 2014, "eps": 10, "score": 0.394}],
     })
+    state = StatusState(started_at=int(time.time()) - 5, dry_run=True)
+    settings = SettingsManager(cfg, store)
+    ui = UiManager(store, str(tmp_path))
+    instance = StatusServer(cfg, store, state, settings=settings, ui=ui)
+    instance.start()
+    instance.auth.setup("admin", "secret123")
+    client = Client(instance.address)
+    status, _payload = client.login()
+    assert status == 200
+    try:
+        yield client, instance, store
+    finally:
+        instance.stop()
+        store.close()
+
+
+@pytest.fixture()
+def open_server(tmp_path, fnos_db):
+    cfg = make_config(fnos_db, str(tmp_path / "state.db"), dry_run=True)
+    cfg.server = ServerConfig(enabled=True, listen="127.0.0.1:%d" % free_port())
+    store = StateStore(cfg.app.state_db)
     state = StatusState(started_at=int(time.time()) - 5, dry_run=True)
     settings = SettingsManager(cfg, store)
     ui = UiManager(store, str(tmp_path))
@@ -293,9 +336,7 @@ def test_background_upload_and_serving(server):
     client, _instance, _store = server
     png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 256
 
-    with pytest.raises(urllib.error.HTTPError) as excinfo:
-        client.get("static/background")
-    assert excinfo.value.code == 404
+    assert client.get("static/background")[0] == 404
 
     status, payload = client.send_raw("PUT", "api/ui/background", png, "image/png")
     assert status == 200
@@ -310,9 +351,7 @@ def test_background_upload_and_serving(server):
     status, payload = client.send("DELETE", "api/ui/background")
     assert status == 200
     assert payload["ui"]["background"]["mode"] == "none"
-    with pytest.raises(urllib.error.HTTPError) as excinfo:
-        client.get("static/background")
-    assert excinfo.value.code == 404
+    assert client.get("static/background")[0] == 404
 
 
 def test_background_rejects_non_images(server):
@@ -412,6 +451,75 @@ def test_oauth_exchange_stores_tokens(server, monkeypatch):
 
     status, payload = client.send("POST", "api/oauth/exchange", {"account": "main", "code": ""})
     assert status == 400
+
+
+def test_first_run_requires_setup(open_server):
+    client, _instance, _store = open_server
+    status, payload = client.get_json("api/auth")
+    assert status == 200
+    assert payload == {"setup_required": True, "authenticated": False, "username": None, "role": None}
+    assert client.get_json("api/status")[0] == 401
+    assert client.get_json("api/settings")[0] == 401
+
+
+def test_setup_creates_admin_and_logs_in(open_server):
+    client, _instance, _store = open_server
+    status, payload = client.send("POST", "api/auth/setup", {
+        "username": "owner", "password": "secret123", "confirm": "secret123",
+    })
+    assert status == 200
+    assert payload["auth"] == {"setup_required": False, "authenticated": True,
+                               "username": "owner", "role": "admin"}
+    assert client.get_json("api/status")[0] == 200
+
+    assert client.send("POST", "api/auth/setup", {
+        "username": "again", "password": "secret123", "confirm": "secret123",
+    })[0] == 400
+
+
+def test_login_logout_and_password_change(open_server):
+    client, _instance, _store = open_server
+    client.send("POST", "api/auth/setup", {"username": "owner", "password": "secret123"})
+    assert client.send("POST", "api/auth/logout", {})[0] == 200
+    assert client.get_json("api/status")[0] == 401
+    assert client.send("POST", "api/auth/login", {"username": "owner", "password": "nope"})[0] == 401
+    assert client.send("POST", "api/auth/login", {"username": "owner", "password": "secret123"})[0] == 200
+    assert client.get_json("api/status")[0] == 200
+
+    status, payload = client.send("POST", "api/auth/password", {
+        "current_password": "secret123", "new_password": "newsecret", "confirm": "newsecret",
+    })
+    assert status == 200
+    client.send("POST", "api/auth/logout", {})
+    assert client.send("POST", "api/auth/login", {"username": "owner", "password": "secret123"})[0] == 401
+    assert client.send("POST", "api/auth/login", {"username": "owner", "password": "newsecret"})[0] == 200
+
+
+def test_admin_can_manage_members(open_server):
+    client, instance, _store = open_server
+    client.send("POST", "api/auth/setup", {"username": "owner", "password": "secret123"})
+
+    status, payload = client.send("POST", "api/users", {
+        "username": "kid", "password": "kidsecret", "role": "member",
+    })
+    assert status == 200
+    assert {user["username"] for user in payload["users"]} == {"owner", "kid"}
+
+    member = Client(instance.address)
+    assert member.send("POST", "api/auth/login", {"username": "kid", "password": "kidsecret"})[0] == 200
+    assert member.get_json("api/status")[0] == 200
+    assert member.get_json("api/users")[0] == 403
+
+    assert member.send("POST", "api/users", {"username": "x", "password": "secret123"})[0] == 403
+
+    assert client.send("POST", "api/users/reset", {"username": "kid", "password": "newkidpass"})[0] == 200
+    assert member.send("POST", "api/auth/login", {"username": "kid", "password": "kidsecret"})[0] == 401
+    assert member.send("POST", "api/auth/login", {"username": "kid", "password": "newkidpass"})[0] == 200
+
+    assert client.send("DELETE", "api/users?name=owner")[0] == 400  # cannot delete self
+    assert client.send("POST", "api/users/reset", {"username": "owner", "role": "member"})[0] == 400
+    assert client.send("DELETE", "api/users?name=kid")[0] == 200
+    assert member.get_json("api/status")[0] == 401  # deleted user's cookie is invalid
 
 
 def test_build_status_without_runtime_state(tmp_path, fnos_db):

@@ -34,6 +34,9 @@ const state = {
   oauth: null,
   oauthAccount: '',
   oauthUrl: '',
+  auth: null,
+  authMode: '',
+  webUsers: [],
   ui: { ...UI_DEFAULT },
   uiRev: -1,
   themeOverride: new URLSearchParams(location.search).get('theme') || '',
@@ -96,6 +99,7 @@ function toast(message, kind) {
 
 async function apiGet(path) {
   const response = await fetch(path, { headers: { Accept: 'application/json' } });
+  if (response.status === 401 && path !== '/api/auth') window.location.reload();
   if (!response.ok) {
     let detail = response.status + ' ' + response.statusText;
     try { const body = await response.json(); detail = body.error || detail; } catch (err) { /* ignore */ }
@@ -111,6 +115,9 @@ async function apiSend(method, path, body) {
     init.body = JSON.stringify(body);
   }
   const response = await fetch(path, init);
+  if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/setup') {
+    window.location.reload();
+  }
   let payload = null;
   try { payload = await response.json(); } catch (err) { /* ignore */ }
   if (!response.ok) {
@@ -364,6 +371,21 @@ async function refreshLogs() {
 function renderHeader() {
   const status = state.status;
   if (!status) return;
+  const meta = document.querySelector('.meta');
+  let box = document.getElementById('userBox');
+  if (!box && meta) {
+    box = document.createElement('span');
+    box.id = 'userBox';
+    box.className = 'user-box';
+    meta.appendChild(box);
+  }
+  if (box) {
+    const auth = state.auth || {};
+    box.innerHTML = auth.username
+      ? '<span class="muted">' + esc(auth.username) + (auth.role === 'admin' ? ' · 管理员' : '') + '</span>' +
+        '<button class="btn small ghost" data-action="logout">退出</button>'
+      : '';
+  }
   document.getElementById('version').textContent = 'v' + (status.version || '?');
   const mode = document.getElementById('modeBadge');
   mode.innerHTML = status.dry_run ? badge('DRY-RUN', 'dry') : badge('LIVE', 'ok');
@@ -594,7 +616,7 @@ function viewAccounts() {
   html += '</tbody></table></div></section>';
 
   html += '<section class="section"><h2>安全提示</h2><div class="card"><ul class="muted" style="margin:.2rem 0 .2rem 1.1rem;padding:0">' +
-    '<li>这个页面没有登录鉴权，请只在局域网内暴露（<code>server.listen</code> 可改为 <code>127.0.0.1:8099</code>）。</li>' +
+    '<li>首次启动会要求创建管理员账号；之后页面和 API 都需要登录，可在「登录与用户」里添加成员或修改密码。</li>' +
     '<li>写操作要求自定义请求头，跨站表单无法直接调用。</li>' +
     '<li>页面不会显示令牌内容，配置里的密钥也会打码。</li></ul></div></section>';
   return html;
@@ -736,6 +758,90 @@ function refreshOAuthSection() {
   if (holder) holder.outerHTML = viewOAuth();
 }
 
+/* ------------------------------------------------------------ auth screens */
+function authScreen(mode) {
+  const isSetup = mode === 'setup';
+  state.authMode = mode;
+  document.body.dataset.mode = 'login';
+  document.getElementById('app').innerHTML =
+    '<div class="login-wrap"><div class="card login-card">' +
+    '<div class="login-brand"><span class="logo">B</span><div>' +
+    '<div class="title">Bangumi-syncer</div>' +
+    '<div class="muted">' + (isSetup ? '首次使用 · 创建管理员账号' : '请登录后继续') + '</div>' +
+    '</div></div>' +
+    (isSetup ? '<p class="hint">这是第一次启动。创建管理员后，访问本页需要登录；其他家庭成员可以在设置里添加。</p>' : '') +
+    '<form id="authForm" class="login-form">' +
+    '<label class="field">用户名<input id="auth-username" autocomplete="username" minlength="3" required></label>' +
+    '<label class="field">密码<input id="auth-password" type="password" autocomplete="' +
+      (isSetup ? 'new-password' : 'current-password') + '" minlength="6" required></label>' +
+    (isSetup ? '<label class="field">确认密码<input id="auth-confirm" type="password" autocomplete="new-password" minlength="6" required></label>' : '') +
+    '<p class="login-error" id="auth-error" hidden></p>' +
+    '<button class="btn primary login-submit" type="submit">' + (isSetup ? '创建管理员并登录' : '登录') + '</button>' +
+    '</form></div></div>';
+  const input = document.getElementById('auth-username');
+  if (input) input.focus();
+}
+
+async function submitAuth(mode) {
+  const error = document.getElementById('auth-error');
+  if (error) error.hidden = true;
+  const username = (document.getElementById('auth-username') || {}).value || '';
+  const password = (document.getElementById('auth-password') || {}).value || '';
+  try {
+    if (mode === 'setup') {
+      const confirm = (document.getElementById('auth-confirm') || {}).value || '';
+      if (password !== confirm) throw new Error('两次输入的密码不一致');
+      const data = await apiSend('POST', '/api/auth/setup', { username: username.trim(), password, confirm });
+      state.auth = data.auth;
+    } else {
+      const data = await apiSend('POST', '/api/auth/login', { username: username.trim(), password });
+      state.auth = data.auth;
+    }
+    window.location.reload();
+  } catch (err) {
+    if (error) {
+      error.textContent = err.message;
+      error.hidden = false;
+    }
+  }
+}
+
+function viewAuthPanel() {
+  const auth = state.auth || {};
+  const users = state.webUsers || [];
+  let html = '<div class="section" id="auth-section"><h2>登录与用户</h2><div class="card">' +
+    '<p class="hint" style="margin-top:0">当前登录 <strong>' + esc(auth.username || '') + '</strong>（' +
+    (auth.role === 'admin' ? '管理员' : '成员') + '）。密码使用 PBKDF2 哈希保存在状态库，登录状态通过签名 Cookie 维持。</p>' +
+    '<div class="form-grid">' +
+    '<label class="field">当前密码<input id="pw-current" type="password" autocomplete="current-password"></label>' +
+    '<label class="field">新密码<input id="pw-new" type="password" autocomplete="new-password" minlength="6"></label>' +
+    '<label class="field">确认新密码<input id="pw-confirm" type="password" autocomplete="new-password" minlength="6"></label>' +
+    '</div><div class="row" style="margin-top:.6rem"><button class="btn" data-action="password-save">修改我的密码</button></div>';
+  if (auth.role === 'admin') {
+    html += '<hr><h3>用户管理</h3>' +
+      '<div class="table-wrap"><table><thead><tr><th>用户名</th><th>角色</th>' +
+      '<th class="hide-sm">创建时间</th><th></th></tr></thead><tbody>' +
+      (users.length ? users.map((user) =>
+        '<tr><td>' + esc(user.username) + '</td>' +
+        '<td>' + badge(user.role === 'admin' ? '管理员' : '成员', user.role === 'admin' ? 'ok' : 'info') + '</td>' +
+        '<td class="hide-sm muted">' + esc(fmtTime(user.created_at, state.status && state.status.timezone)) + '</td>' +
+        '<td><button class="btn small" data-action="user-reset" data-user="' + esc(user.username) + '">重置密码</button> ' +
+        '<button class="btn small danger" data-action="user-delete" data-user="' + esc(user.username) + '"' +
+        (user.username === auth.username ? ' disabled' : '') + '>删除</button></td></tr>').join('')
+        : '<tr><td colspan="4" class="empty">还没有用户</td></tr>') +
+      '</tbody></table></div>' +
+      '<form id="userAddForm" class="row" style="align-items:flex-end;margin-top:.8rem">' +
+      '<label class="field">用户名<input id="new-username" placeholder="3–32 位字母/数字/_.-" required></label>' +
+      '<label class="field">初始密码<input id="new-password" type="password" minlength="6" required></label>' +
+      '<label class="field" style="min-width:7rem">角色' + customSelect('new-role', [
+        { value: 'member', label: '成员' }, { value: 'admin', label: '管理员' },
+      ], 'member') + '</label>' +
+      '<button class="btn primary" type="submit">添加用户</button></form>' +
+      '<p class="hint">成员可以查看和操作同步，但只能管理员管理用户。至少保留一个管理员，且不能删除当前账号。</p>';
+  }
+  return html + '</div></div>';
+}
+
 /* ---------------------------------------------------------------- settings */
 function viewSettings() {
   if (state.settingsError) {
@@ -807,6 +913,8 @@ function viewSettings() {
     '</tbody></table></div>' +
     '<p class="hint">勾选即参与同步；勾掉不会删除已有映射，只是不再读取该用户的进度。新发现的用户默认不勾选。</p>' +
     '</div></div>';
+
+  html += viewAuthPanel();
 
   /* ---- appearance (stored on the server) ---- */
   const bg = ui.background || {};
@@ -988,6 +1096,10 @@ async function loadSettings() {
       if (!state.oauthAccount || !names.includes(state.oauthAccount)) {
         state.oauthAccount = names[0] || '';
       }
+    }
+    if (state.auth && state.auth.role === 'admin') {
+      const list = await apiGet('/api/users').catch(() => null);
+      state.webUsers = (list && list.users) || [];
     }
     buildUserRows();
   } catch (err) {
@@ -1720,6 +1832,67 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (action === 'logout') {
+    try {
+      await apiSend('POST', '/api/auth/logout', {});
+    } finally {
+      state.auth = null;
+      window.location.reload();
+    }
+    return;
+  }
+
+  if (action === 'password-save') {
+    const current = (document.getElementById('pw-current') || {}).value || '';
+    const next = (document.getElementById('pw-new') || {}).value || '';
+    const confirm = (document.getElementById('pw-confirm') || {}).value || '';
+    if (!next || next.length < 6) { toast('新密码至少 6 位', 'err'); return; }
+    if (next !== confirm) { toast('两次输入的新密码不一致', 'err'); return; }
+    try {
+      await apiSend('POST', '/api/auth/password', {
+        current_password: current, new_password: next, confirm,
+      });
+      ['pw-current', 'pw-new', 'pw-confirm'].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.value = '';
+      });
+      toast('密码已修改，当前登录保持有效', 'ok');
+    } catch (err) {
+      toast('修改失败：' + err.message, 'err');
+    }
+    return;
+  }
+
+  if (action === 'user-reset') {
+    const username = target.dataset.user;
+    const password = window.prompt('给 ' + username + ' 设置新密码（至少 6 位）');
+    if (!password) return;
+    if (password.length < 6) { toast('密码至少 6 位', 'err'); return; }
+    try {
+      const data = await apiSend('POST', '/api/users/reset', { username, password });
+      state.webUsers = data.users || state.webUsers;
+      toast('已重置 ' + username + ' 的密码', 'ok');
+      render();
+    } catch (err) {
+      toast('重置失败：' + err.message, 'err');
+    }
+    return;
+  }
+
+  if (action === 'user-delete') {
+    const username = target.dataset.user;
+    if (!confirm('删除用户 ' + username + '？该账号将立即无法登录。')) return;
+    try {
+      const data = await apiSend('DELETE', '/api/users?name=' + encodeURIComponent(username));
+      state.webUsers = data.users || state.webUsers;
+      toast('已删除用户 ' + username, 'ok');
+      render();
+    } catch (err) {
+      toast('删除失败：' + err.message, 'err');
+    }
+    return;
+  }
+
   if (action === 'oauth-save') {
     const account = (document.getElementById('oauth-account') || {}).value;
     const clientId = (document.getElementById('oauth-client-id') || {}).value || '';
@@ -1937,6 +2110,29 @@ document.addEventListener('input', (event) => {
 });
 
 document.addEventListener('submit', async (event) => {
+  if (event.target.id === 'authForm') {
+    event.preventDefault();
+    await submitAuth(state.authMode === 'setup' ? 'setup' : 'login');
+    return;
+  }
+
+  if (event.target.id === 'userAddForm') {
+    event.preventDefault();
+    const username = (document.getElementById('new-username') || {}).value || '';
+    const password = (document.getElementById('new-password') || {}).value || '';
+    const role = (document.getElementById('new-role') || {}).value || 'member';
+    if (password.length < 6) { toast('密码至少 6 位', 'err'); return; }
+    try {
+      const data = await apiSend('POST', '/api/users', { username: username.trim(), password, role });
+      state.webUsers = data.users || state.webUsers;
+      toast('已添加用户 ' + username.trim(), 'ok');
+      render();
+    } catch (err) {
+      toast('添加失败：' + err.message, 'err');
+    }
+    return;
+  }
+
   if (event.target.classList.contains('path-add')) {
     event.preventDefault();
     const scope = event.target.dataset.scope;
@@ -2018,6 +2214,15 @@ if (window.matchMedia) {
 }
 
 /* ------------------------------------------------------------------- boot */
+async function startApp() {
+  document.body.dataset.mode = 'app';
+  await refresh();
+  if (!state.status || !state.status.ui) applyUi({ ...UI_DEFAULT });
+  if (state.tab === 'settings') await loadSettings();
+  render();
+  startPolling();
+}
+
 (async function boot() {
   if (!TABS.includes(state.tab)) state.tab = 'overview';
   if (window.__BS_UI_INITIAL__) {
@@ -2026,9 +2231,20 @@ if (window.matchMedia) {
     if (cached.accent) document.documentElement.style.setProperty('--accent', cached.accent);
     if (cached.font_scale) document.documentElement.style.setProperty('--font-scale', cached.font_scale);
   }
-  await refresh();
-  if (!state.status || !state.status.ui) applyUi({ ...UI_DEFAULT });
-  if (state.tab === 'settings') await loadSettings();
-  render();
-  startPolling();
+  const auth = await apiGet('/api/auth').catch(() => null);
+  if (!auth) {
+    document.getElementById('app').innerHTML =
+      '<div class="card"><h2>无法连接后端</h2><p class="muted">请稍后刷新页面。</p></div>';
+    return;
+  }
+  state.auth = auth;
+  if (auth.setup_required) {
+    authScreen('setup');
+    return;
+  }
+  if (!auth.authenticated) {
+    authScreen('login');
+    return;
+  }
+  await startApp();
 })();

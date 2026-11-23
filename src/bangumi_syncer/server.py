@@ -28,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from . import __version__, oauth, trackers
+from .auth import AuthError, AuthManager
 from .config import Config
 from .http import HttpClient
 from .log import get_logger
@@ -189,6 +190,22 @@ class _Handler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/") or "/"
         query = urllib.parse.parse_qs(parsed.query)
 
+        self._user = self.auth.user_from_cookie(self.headers.get("Cookie"))
+        setup_required = self.auth.setup_required()
+        public_get = method == "GET" and (
+            path in ("/", "/index.html", "/favicon.ico", "/healthz", "/api/auth", "/static/background")
+            or path in STATIC_FILES
+        )
+        public_post = method == "POST" and path in ("/api/auth/login", "/api/auth/setup", "/api/auth/logout")
+        if setup_required:
+            if not (public_get or public_post):
+                raise HttpError(401, "setup required")
+        elif not self._user:
+            if not (public_get or (method == "POST" and path == "/api/auth/login")):
+                raise HttpError(401, "unauthorized")
+        if path.startswith("/api/users") and (self._user or {}).get("role") != "admin":
+            raise HttpError(403, "需要管理员权限")
+
         if method == "GET":
             if path in ("/", "/index.html"):
                 self._send_bytes(200, "text/html; charset=utf-8", self.assets["index.html"])
@@ -224,6 +241,12 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/api/oauth":
                 self._send_json(200, self._oauth_status())
                 return
+            if path == "/api/auth":
+                self._handle_auth_status()
+                return
+            if path == "/api/users":
+                self._handle_users_list()
+                return
             if path == "/api/ui":
                 self._handle_ui_get()
                 return
@@ -250,6 +273,27 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if method == "POST" and path == "/api/oauth/exchange":
             self._handle_oauth_exchange()
+            return
+        if method == "POST" and path == "/api/auth/setup":
+            self._handle_auth_setup()
+            return
+        if method == "POST" and path == "/api/auth/login":
+            self._handle_auth_login()
+            return
+        if method == "POST" and path == "/api/auth/logout":
+            self._handle_auth_logout()
+            return
+        if method == "POST" and path == "/api/auth/password":
+            self._handle_auth_password()
+            return
+        if method == "POST" and path == "/api/users":
+            self._handle_users_create()
+            return
+        if method == "POST" and path == "/api/users/reset":
+            self._handle_users_reset()
+            return
+        if method == "DELETE" and path == "/api/users":
+            self._handle_users_delete(query)
             return
         if method == "POST" and path == "/api/settings/reset":
             self._handle_settings_reset()
@@ -453,6 +497,114 @@ class _Handler(BaseHTTPRequestHandler):
         manager = self._settings_manager()
         self._send_json(200, {"ok": True, "values": manager.reset(), "accounts": manager.accounts})
 
+    # --------------------------------------------------------- auth / users
+    def _auth_payload(self) -> dict[str, Any]:
+        user = self._user or {}
+        return {
+            "setup_required": self.auth.setup_required(),
+            "authenticated": bool(self._user),
+            "username": user.get("username"),
+            "role": user.get("role"),
+        }
+
+    def _handle_auth_status(self) -> None:
+        self._send_json(200, self._auth_payload())
+
+    def _auth_body(self) -> dict[str, Any]:
+        body = self._read_json()
+        if not isinstance(body, dict):
+            raise HttpError(400, "expected a JSON object")
+        return body
+
+    def _handle_auth_setup(self) -> None:
+        body = self._auth_body()
+        username = str(body.get("username") or "")
+        password = str(body.get("password") or "")
+        confirm = str(body.get("confirm") or password)
+        if password != confirm:
+            raise HttpError(400, "两次输入的密码不一致")
+        try:
+            result = self.auth.setup(username, password)
+        except AuthError as exc:
+            raise HttpError(400, str(exc)) from exc
+        self._user = {"username": result["username"], "role": result["role"]}
+        self._send_json(200, {"ok": True, "auth": self._auth_payload()},
+                        cookies=[self.auth.issue_cookie(result["username"])])
+        log.info("initial web administrator %r created", result["username"])
+
+    def _handle_auth_login(self) -> None:
+        body = self._auth_body()
+        username = str(body.get("username") or "").strip()
+        password = str(body.get("password") or "")
+        if self.auth.setup_required():
+            raise HttpError(409, "尚未初始化管理员账号")
+        if not self.auth.verify(username, password):
+            log.warning("failed web login for %r", username)
+            raise HttpError(401, "用户名或密码不正确")
+        user = self.auth.get_user(username) or {}
+        role = user.get("role") or "member"
+        self._user = {"username": username, "role": role}
+        self._send_json(200, {"ok": True, "auth": self._auth_payload()},
+                        cookies=[self.auth.issue_cookie(username)])
+        log.info("web login: %s (%s)", username, role)
+
+    def _handle_auth_logout(self) -> None:
+        self._user = None
+        self._send_json(200, {"ok": True}, cookies=[self.auth.clear_cookie()])
+
+    def _handle_auth_password(self) -> None:
+        if not self._user:
+            raise HttpError(401, "unauthorized")
+        body = self._auth_body()
+        current = str(body.get("current_password") or "")
+        new = str(body.get("new_password") or "")
+        confirm = str(body.get("confirm") or new)
+        if new != confirm:
+            raise HttpError(400, "两次输入的新密码不一致")
+        try:
+            self.auth.change_password(self._user["username"], current, new)
+        except AuthError as exc:
+            raise HttpError(400, str(exc)) from exc
+        self._send_json(200, {"ok": True})
+
+    def _handle_users_list(self) -> None:
+        self._send_json(200, {"users": self.auth.list_users()})
+
+    def _handle_users_create(self) -> None:
+        body = self._auth_body()
+        try:
+            user = self.auth.create_user(
+                str(body.get("username") or ""),
+                str(body.get("password") or ""),
+                str(body.get("role") or "member"),
+            )
+        except AuthError as exc:
+            raise HttpError(400, str(exc)) from exc
+        self._send_json(200, {"ok": True, "user": user, "users": self.auth.list_users()})
+
+    def _handle_users_reset(self) -> None:
+        body = self._auth_body()
+        username = str(body.get("username") or "")
+        password = body.get("password")
+        role = body.get("role")
+        try:
+            if password:
+                self.auth.reset_password(username, str(password))
+            if role:
+                self.auth.set_role(username, str(role))
+        except AuthError as exc:
+            raise HttpError(400, str(exc)) from exc
+        self._send_json(200, {"ok": True, "users": self.auth.list_users()})
+
+    def _handle_users_delete(self, query: dict[str, list[str]]) -> None:
+        name = (query.get("name") or [""])[0]
+        actor = (self._user or {}).get("username") or ""
+        try:
+            self.auth.delete_user(name, actor)
+        except AuthError as exc:
+            raise HttpError(400, str(exc)) from exc
+        self._send_json(200, {"ok": True, "users": self.auth.list_users()})
+
     # ------------------------------------------------------------------ oauth
     def _oauth_account(self, name: object):
         accounts = self.cfg.target.accounts
@@ -612,11 +764,13 @@ class _Handler(BaseHTTPRequestHandler):
         return self.rfile.read(length)
 
     # --------------------------------------------------------------- responses
-    def _send_json(self, status: int, payload: Any) -> None:
-        self._send_bytes(status, "application/json; charset=utf-8", _json_response(payload))
+    def _send_json(self, status: int, payload: Any, cookies: list[str] | None = None) -> None:
+        headers = [("Set-Cookie", cookie) for cookie in (cookies or [])]
+        self._send_bytes(status, "application/json; charset=utf-8",
+                         _json_response(payload), extra_headers=headers)
 
     def _send_bytes(self, status: int, content_type: str, body: bytes,
-                    cache_seconds: int = 0) -> None:
+                    cache_seconds: int = 0, extra_headers: list[tuple[str, str]] | None = None) -> None:
         try:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
@@ -624,6 +778,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store" if cache_seconds == 0
                              else "public, max-age=%d" % cache_seconds)
             self.send_header("X-Content-Type-Options", "nosniff")
+            for name, value in extra_headers or []:
+                self.send_header(name, value)
             self.end_headers()
             if body:
                 self.wfile.write(body)
@@ -677,6 +833,8 @@ class StatusServer:
         self.state = state
         self.settings = settings
         self.ui = ui
+        self.auth = AuthManager(store)
+        self._user: dict[str, Any] | None = None
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._ring: _RingHandler | None = None
@@ -698,6 +856,7 @@ class StatusServer:
                 "state": self.state,
                 "settings": self.settings,
                 "ui": self.ui,
+                "auth": self.auth,
                 "assets": self._assets,
                 "searchers": {},
                 "search_lock": threading.Lock(),
