@@ -1005,6 +1005,9 @@ function ensureCropModal() {
     setCropZoom(Number(event.target.value));
   });
   bindCropDrag(document.getElementById('crop-canvas'));
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.hidden) closeCrop();
+  });
   window.addEventListener('resize', () => {
     if (!modal.hidden) layoutCrop(true);
   });
