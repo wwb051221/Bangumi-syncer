@@ -1217,6 +1217,7 @@ function updateCropPreviews() {
   if (!crop.img) return;
   clearTimeout(previewTimer);
   previewTimer = setTimeout(() => {
+    if (!crop.img) return;  // the dialog may have been closed meanwhile
     const out = cropOutputCanvas(640);
     const preview = document.getElementById('crop-preview');
     if (preview) {
