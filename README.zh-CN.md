@@ -113,9 +113,11 @@ docker compose logs -f
 | **映射** | 新增/覆盖映射、按关键词搜索 Bangumi 条目并回填、删除映射（同时清该区间推送记录） |
 | **账号** | 令牌状态与过期时间、复制授权命令 |
 | **日志** | 最近 400 行实时日志（2 秒刷新） |
-| **设置** | **在线修改同步/匹配/目录/用户**（存状态库、立即生效）、**飞牛用户勾选**、**服务端保存的外观与背景**、**Bangumi API 获取指引** |
+| **设置** | **在线修改同步/匹配/目录/用户**（存状态库、立即生效）、**媒体库目录可视化勾选**、**飞牛用户勾选**、**服务端保存的外观与背景**、**Bangumi API 获取指引** |
 
 设置页里的修改会作为「运行时覆盖」存进状态库，**不需要重启容器**；点「恢复 config.toml 默认」可撤销。
+**媒体库目录**直接读取飞牛影视里的真实文件夹树：勾选父目录即包含其下所有剧集，支持排除目录、
+显示每目录季/集数、手动补充路径，无需额外挂载媒体目录。
 
 **外观（服务器端保存，多设备共享）**：跟随系统/浅色/深色主题、6 种主题色 + 自定义取色、
 85%–125% 字号、舒适/紧凑密度；背景支持**上传图片（先裁剪）/ 图片 URL / 4 个内置渐变预设**，
@@ -152,6 +154,10 @@ docker compose logs -f
 上传背景时的裁剪窗口（拖动 / 缩放 / 比例 / 实时预览）：
 
 ![背景裁剪](docs/screenshots/crop-modal.png)
+
+媒体库目录可视化选择（按真实文件夹树勾选，带季/集数统计）：
+
+![媒体库目录选择](docs/screenshots/settings-library-dark.png)
 
 主题支持「跟随系统 / 浅色 / 深色」，另有 6 种主题色 + 自定义取色、85%–125% 字号、舒适/紧凑密度。
 **外观与背景保存在服务器**，多设备共享；背景可上传、填 URL 或使用 4 个内置渐变预设，
@@ -350,7 +356,7 @@ docker build --build-arg BASE_IMAGE=docker.fnnas.com/library/python:3.12-slim \
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-python -m pytest            # 155 个用例，全部离线（含模拟 fnOS 库）
+python -m pytest            # 160 个用例，全部离线（含模拟 fnOS 库）
 ruff check src tests
 ```
 
@@ -367,7 +373,7 @@ src/bangumi_syncer/
   state.py         SQLite 状态（令牌/映射/推送/候选/运行）
   server.py        只读状态页 + JSON
   cli.py           命令行
-tests/             155 个离线用例（真实 schema 的模拟库 + 假 tracker）
+tests/             160 个离线用例（真实 schema 的模拟库 + 假 tracker）
 docs/              架构、匹配算法、飞牛库结构
 ```
 

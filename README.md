@@ -136,8 +136,10 @@ Open `http://<nas>:8099/` after the container starts:
 - **Accounts** — token state and expiry, copy-paste authorisation command.
 - **Logs** — last 400 log lines, refreshed every 2 s.
 - **Settings** — edit sync/match/library/user settings online (persisted in the state DB, applied
-  on the next cycle **without a restart**), pick which fnOS users to sync, plus a step-by-step
-  Bangumi API guide.
+  on the next cycle **without a restart**). The media-library filter is a **visual folder tree**
+  built from the real episode paths in the fnOS database: tick a parent folder to include everything
+  below it, exclude subfolders, see season/episode counts per folder, and add paths manually.
+  A step-by-step Bangumi API guide is included too.
 - **Appearance** (stored server-side, shared by every device) — auto/light/dark theme, six accent
   colours plus a custom picker, 85–125% font scale, comfortable/compact density; custom background
   via **upload (with crop dialog) / image URL / four built-in gradient presets** with opacity, blur
@@ -194,7 +196,7 @@ Exit codes: `0` ok, `1` run failed, `2` config error, `3` re-authorisation neede
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest        # 155 offline tests (synthetic fnOS DB + fake tracker)
+python -m pytest        # 160 offline tests (synthetic fnOS DB + fake tracker)
 ruff check src tests
 ```
 

@@ -134,12 +134,21 @@ Bangumi 侧失败时返回 `502`。
   },
   "accounts": ["main"],
   "source": {"users": [{"key": "...", "name": "wwb051221", "plays": 3, "finished": 0}],
-             "seasons": 13, "episodes": 296, "include_paths": ["/vol1/1000/影片/动漫"]},
+             "seasons": 13, "episodes": 296, "include_paths": ["/vol1/1000/影片/动漫"],
+             "folders": {"roots": [{"path": "/vol1/1000/影片", "name": "影片",
+                         "series": 17, "episodes": 437,
+                         "children": [{"path": "/vol1/1000/影片/动漫", "name": "动漫",
+                                       "series": 13, "episodes": 296, "children": []}]}],
+                         "series": 17, "episodes": 437}},
   "source_error": null
 }
 ```
 
 `source` 是直接从飞牛影视数据库读到的**真实用户列表**（缓存 60 秒），失败时 `source_error` 给出原因。
+
+`source.folders` 是给设置页目录选择器用的目录树：由剧集文件路径聚合而来，单链目录会被折叠，
+每个节点带 `series`（季数）与 `episodes`（集数），`roots` 可有多棵。目录树使用**未过滤**的全量
+快照，因此当前被排除的库也能重新勾选；读取失败时会退化为已过滤视图。
 
 ### `PUT /api/settings`
 
@@ -167,7 +176,7 @@ Bangumi 侧失败时返回 `502`。
 
 ### `GET /api/source-users?refresh=1`
 
-返回媒体库用户列表（`refresh=1` 跳过 60 秒缓存）。与 `/api/settings` 里的 `source` 结构相同。
+返回媒体库用户列表与目录树（`refresh=1` 跳过 60 秒缓存）。与 `/api/settings` 里的 `source` 结构相同。
 
 ## 外观接口（服务器端保存）
 
