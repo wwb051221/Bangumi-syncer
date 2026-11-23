@@ -947,7 +947,10 @@ function ensureCropModal() {
           <button class="btn small ghost" data-crop="close">关闭</button>
         </header>
         <div class="crop-body">
-          <div class="crop-stage" id="crop-stage"><canvas id="crop-canvas"></canvas></div>
+          <div class="crop-left">
+            <div class="crop-stage" id="crop-stage"><canvas id="crop-canvas"></canvas></div>
+            <p class="hint crop-help" style="margin:0">拖动图片调整位置 · 滚轮或滑杆缩放 · 上方切换裁剪比例</p>
+          </div>
           <aside class="crop-side">
             <div>
               <div class="field">裁剪比例</div>
@@ -1166,6 +1169,18 @@ function drawCrop() {
     ctx.fillRect(0, 0, crop.w, crop.h);
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(crop.img, dx, dy, displayW, displayH);
+    // rule-of-thirds guides (drawn on the view only, never in the output)
+    const dark = document.documentElement.dataset.theme !== 'light';
+    ctx.strokeStyle = dark ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.20)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i < 3; i += 1) {
+      const gx = Math.round((crop.w * i) / 3) + 0.5;
+      const gy = Math.round((crop.h * i) / 3) + 0.5;
+      ctx.moveTo(gx, 0); ctx.lineTo(gx, crop.h);
+      ctx.moveTo(0, gy); ctx.lineTo(crop.w, gy);
+    }
+    ctx.stroke();
   });
 }
 
