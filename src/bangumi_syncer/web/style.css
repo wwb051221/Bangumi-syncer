@@ -283,6 +283,32 @@ input, select, textarea {
 }
 textarea { width: 100%; resize: vertical; min-height: 4.2rem; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* custom dropdown (native <select> popups ignore the dark palette on Android) */
+.select { position: relative; width: 100%; }
+.select-button {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  width: 100%; background: var(--code-bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius-md);
+  padding: .38rem .55rem; font: inherit; font-size: .86rem; text-align: left; cursor: pointer;
+}
+.select-button:hover, .select.open .select-button { border-color: var(--accent); }
+.select-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-chevron { color: var(--muted); font-size: .78rem; line-height: 1; flex: none; }
+.select-menu {
+  position: fixed; z-index: 60; left: 0; top: 0; width: 10rem;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-md); box-shadow: var(--shadow);
+  padding: .25rem; max-height: 14rem; overflow: auto;
+}
+.select-menu[hidden] { display: none; }
+.select-option {
+  display: block; width: 100%; text-align: left; border: 0; background: transparent;
+  color: var(--text); font: inherit; font-size: .86rem;
+  padding: .42rem .55rem; border-radius: var(--radius-sm); cursor: pointer;
+}
+.select-option:hover, .select-option.active { background: var(--accent-soft); }
+.select-option.active { font-weight: 600; }
 label.field { display: flex; flex-direction: column; gap: .25rem; font-size: .76rem; color: var(--muted); }
 label.check { display: inline-flex; align-items: center; gap: .4rem; font-size: .84rem; cursor: pointer; }
 input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); }

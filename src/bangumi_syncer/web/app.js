@@ -114,6 +114,77 @@ async function apiSend(method, path, body) {
   return payload;
 }
 
+/* ------------------------------------------------------- custom dropdown */
+/* Native <select> popups are rendered by the OS/browser and ignore the dark
+   palette on Android Firefox (white popup, light text). This component keeps
+   the same API (a hidden input with the chosen value) but draws its own menu. */
+function customSelect(id, options, value, role) {
+  const items = options.map((option) => {
+    const optionValue = typeof option === 'string' ? option : option.value;
+    const optionLabel = typeof option === 'string' ? option : option.label;
+    const active = String(optionValue) === String(value);
+    return '<button type="button" class="select-option' + (active ? ' active' : '') + '" role="option"' +
+      ' aria-selected="' + (active ? 'true' : 'false') + '" data-value="' + esc(optionValue) + '">' +
+      esc(optionLabel) + '</button>';
+  }).join('');
+  const current = options.find((option) =>
+    String(typeof option === 'string' ? option : option.value) === String(value));
+  const label = current ? (typeof current === 'string' ? current : current.label) : (value || '');
+  return '<div class="select" data-select>' +
+    '<button type="button" class="select-button" data-action="select-toggle" aria-haspopup="listbox" aria-expanded="false">' +
+    '<span class="select-label">' + esc(label) + '</span><span class="select-chevron" aria-hidden="true">▾</span>' +
+    '</button>' +
+    '<div class="select-menu" role="listbox" data-owner="' + esc(id) + '" hidden>' + items + '</div>' +
+    '<input type="hidden" id="' + esc(id) + '" value="' + esc(value) + '"' +
+    (role ? ' data-role="' + esc(role) + '"' : '') + '>' +
+    '</div>';
+}
+
+function selectMenuFor(wrap) {
+  const hidden = wrap && wrap.querySelector('input[type="hidden"]');
+  return hidden ? document.querySelector('.select-menu[data-owner="' + hidden.id + '"]') : null;
+}
+
+function openSelectMenu(wrap) {
+  const menu = selectMenuFor(wrap);
+  const button = wrap.querySelector('.select-button');
+  if (!menu || !button) return;
+  closeSelectMenus();
+  // The menu is moved to <body> so that .table-wrap overflow (and its
+  // backdrop-filter containing block) can never clip it.
+  document.body.appendChild(menu);
+  menu.hidden = false;
+  const rect = button.getBoundingClientRect();
+  const width = Math.max(120, rect.width);
+  menu.style.width = width + 'px';
+  menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)) + 'px';
+  const height = Math.min(menu.scrollHeight, 224);
+  let top = rect.bottom + 4;
+  if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 4);
+  menu.style.top = top + 'px';
+  wrap.classList.add('open');
+  button.setAttribute('aria-expanded', 'true');
+}
+
+function closeMenu(menu) {
+  if (!menu || menu.hidden) return;
+  const owner = menu.dataset.owner;
+  menu.hidden = true;
+  menu.style.cssText = '';
+  const hidden = owner ? document.getElementById(owner) : null;
+  const wrap = hidden ? hidden.closest('[data-select]') : null;
+  if (wrap) {
+    wrap.appendChild(menu);
+    wrap.classList.remove('open');
+    const button = wrap.querySelector('.select-button');
+    if (button) button.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function closeSelectMenus() {
+  document.querySelectorAll('.select-menu').forEach(closeMenu);
+}
+
 /* -------------------------------------------------------- appearance (server) */
 function resolvedTheme(pref) {
   if (pref === 'light' || pref === 'dark') return pref;
@@ -444,14 +515,14 @@ function viewReview() {
 
 function viewMappings() {
   const status = state.status;
-  const accountOptions = ((status.config && status.config.target && status.config.target.accounts) || [])
-    .map((account) => '<option value="' + esc(account.name) + '">' + esc(account.name) + '</option>').join('');
+  const accountNames = ((status.config && status.config.target && status.config.target.accounts) || [])
+    .map((account) => account.name);
   const search = state.search;
 
   let html = '<section class="section"><h2>添加 / 修改映射</h2><div class="card">' +
     '<p class="muted">区间映射用于「一季文件夹里塞了多季」的情况，例如 1–24 对应第一季、25–48 对应第二季。</p>' +
     '<form id="mapForm" class="row" style="align-items:flex-end">' +
-    '<label class="field">账号<select id="mapAccount">' + accountOptions + '</select></label>' +
+    '<label class="field" style="min-width:9rem">账号' + customSelect('mapAccount', accountNames, accountNames[0] || '') + '</label>' +
     '<label class="field" style="flex:2 1 18rem">series key<input id="mapSeries" placeholder="fnos:xxxxxxxx:s1（从待复核页复制）" required></label>' +
     '<label class="field">Bangumi subject<input id="mapSubject" type="number" min="1" required></label>' +
     '<label class="field">名称（可选）<input id="mapName"></label>' +
@@ -583,15 +654,13 @@ function viewSettings() {
     (sourceError ? '<p style="color:var(--warn);font-size:.84rem">读取媒体库失败：' + esc(sourceError) + '</p>' : '') +
     '<div class="table-wrap"><table><thead><tr><th>用户</th><th class="num">播放记录</th><th class="num hide-sm">已看完</th>' +
     '<th>同步到账号</th><th>单独阈值</th><th></th></tr></thead><tbody>' +
-    (state.userRows.length ? state.userRows.map((row) => {
-      const accountOptions = accounts.map((name) =>
-        '<option value="' + esc(name) + '"' + (name === row.account ? ' selected' : '') + '>' + esc(name) + '</option>').join('');
+    (state.userRows.length ? state.userRows.map((row, index) => {
       return '<tr data-user="' + esc(row.name) + '">' +
         '<td><label class="check"><input type="checkbox" data-role="user-enabled"' + (row.enabled ? ' checked' : '') + '> ' + esc(row.name) + '</label>' +
         (row.missing ? '<div class="hint">媒体库中已不存在</div>' : '') + '</td>' +
         '<td class="num">' + (row.plays === null ? '-' : num(row.plays)) + '</td>' +
         '<td class="num hide-sm">' + (row.finished === null ? '-' : num(row.finished)) + '</td>' +
-        '<td><select data-role="user-account">' + accountOptions + '</select></td>' +
+        '<td style="min-width:8rem">' + customSelect('user-account-' + index, accounts, row.account, 'user-account') + '</td>' +
         '<td><input type="number" data-role="user-ratio" min="0.05" max="1" step="0.01" placeholder="继承全局" value="' + (row.watch_ratio == null ? '' : esc(row.watch_ratio)) + '"></td>' +
         '<td><button class="btn small ghost" data-action="remove-user" data-user="' + esc(row.name) + '">移除</button></td></tr>';
     }).join('') : '<tr><td colspan="6" class="empty">没有可同步的用户</td></tr>') +
@@ -627,10 +696,10 @@ function viewSettings() {
     '<div><div class="bg-preview" id="bg-preview" style="' + previewStyle + '">' +
     (bg.mode === 'none' ? '未设置背景' : '') + '</div>' +
     '<div class="row" style="margin-top:.6rem;align-items:center">' +
-    '<select id="bg-preset" style="width:8rem">' +
-    Object.keys(BG_PRESETS).map((key) => '<option value="' + key + '"' + (bg.preset === key ? ' selected' : '') + '>' +
-      ({ mist: '晨雾', dusk: '暮色', ocean: '深海', paper: '纸感' })[key] + '</option>').join('') +
-    '</select>' +
+    '<div class="field" style="width:9rem">预设背景' + customSelect('bg-preset', [
+      { value: 'mist', label: '晨雾' }, { value: 'dusk', label: '暮色' },
+      { value: 'ocean', label: '深海' }, { value: 'paper', label: '纸感' },
+    ], bg.preset || 'mist') + '</div>' +
     '<button class="btn small" data-action="bg-preset">使用预设</button>' +
     (bg.mode === 'image' ? '<button class="btn small" data-action="bg-recrop">重新裁剪</button>' : '') +
     '<button class="btn small danger" data-action="bg-clear">清除背景</button>' +
@@ -1320,6 +1389,7 @@ async function clearBackground() {
 /* ----------------------------------------------------------------- render */
 function render() {
   if (!state.status) return;
+  closeSelectMenus();
   renderHeader();
   const views = {
     overview: viewOverview,
@@ -1344,6 +1414,39 @@ function setTab(tab) {
 
 /* ----------------------------------------------------------------- events */
 document.addEventListener('click', async (event) => {
+  const toggle = event.target.closest('[data-action="select-toggle"]');
+  if (toggle) {
+    const wrap = toggle.closest('[data-select]');
+    if (wrap.classList.contains('open')) {
+      closeSelectMenus();
+    } else {
+      openSelectMenu(wrap);
+    }
+    return;
+  }
+
+  const option = event.target.closest('.select-option');
+  if (option) {
+    const menu = option.closest('.select-menu');
+    const owner = menu ? menu.dataset.owner : '';
+    const hidden = owner ? document.getElementById(owner) : null;
+    const wrap = hidden ? hidden.closest('[data-select]') : null;
+    if (!hidden || !wrap) return;
+    hidden.value = option.dataset.value;
+    const label = wrap.querySelector('.select-label');
+    if (label) label.textContent = option.textContent;
+    wrap.querySelectorAll('.select-option').forEach((node) => {
+      const active = node === option;
+      node.classList.toggle('active', active);
+      node.setAttribute('aria-selected', String(active));
+    });
+    closeSelectMenus();
+    hidden.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+
+  if (!event.target.closest('[data-select]') && !event.target.closest('.select-menu')) closeSelectMenus();
+
   const target = event.target.closest('[data-action]');
   if (!target) return;
   const action = target.dataset.action;
@@ -1624,6 +1727,12 @@ window.addEventListener('hashchange', () => {
 });
 
 window.addEventListener('resize', updateLayoutFlag);
+window.addEventListener('resize', () => closeSelectMenus());
+window.addEventListener('scroll', () => closeSelectMenus(), true);
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeSelectMenus();
+});
 
 if (window.matchMedia) {
   const media = window.matchMedia('(prefers-color-scheme: light)');
