@@ -19,6 +19,7 @@ htmlcov/
 # Runtime data (never commit tokens or snapshots)
 data/
 config.toml
+.env
 *.db
 *.db-wal
 *.db-shm
