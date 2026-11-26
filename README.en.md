@@ -41,6 +41,19 @@ position/runtime ratio is the primary "finished" signal (`sync.watch_ratio`, def
 - **Zero runtime dependencies** — stdlib only, ~120 MB image (the python:slim base
   accounts for almost all of it).
 
+## Prebuilt images (optional)
+
+Published to Docker Hub, GHCR and the fnOS mirror (same image):
+
+| Source | Pull |
+| --- | --- |
+| Docker Hub (public) | `docker pull wwb051221/bangumi-syncer:0.1.0` |
+| GHCR | `docker pull ghcr.io/wwb051221/bangumi-syncer:0.1.0` |
+| fnOS mirror | `docker pull docker.fnnas.com/wwb051221/bangumi-syncer:0.1.0` |
+
+`latest` is also available. To skip the local build, point `image:` in `docker-compose.yml` at one
+of these and remove the `build:` block, then run `docker compose up -d`.
+
 ## Quick start
 
 ```bash

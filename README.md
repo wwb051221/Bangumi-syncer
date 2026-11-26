@@ -7,6 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Image size](https://img.shields.io/badge/image-~120MB-informational.svg)](#docker)
+[![Docker Pulls](https://img.shields.io/docker/pulls/wwb051221/bangumi-syncer.svg)](https://hub.docker.com/r/wwb051221/bangumi-syncer)
+
 
 **English**: [README.en.md](README.en.md) · **设计文档**: [架构](docs/architecture.md) · [匹配算法](docs/mapping.md) · [飞牛数据库结构](docs/schema.md) · [HTTP API](docs/api.md) · [验证记录](docs/verification.md)
 
@@ -54,6 +56,19 @@
 | 样本 | 动漫库 13 季 / 296 集，自动匹配 10 季正确，3 季进入人工复核（Bangumi 无独立条目） |
 | Bangumi | `api.bgm.tv` v0 接口，直连正常，无需代理 |
 | 容器 | Docker 28.5.2 + Compose v2.40.3 实机构建与运行验证，镜像 120 MB（详见 [验证记录](docs/verification.md)） |
+
+## 预构建镜像（可选）
+
+已发布到 Docker Hub、GHCR 和飞牛加速源，三者内容一致：
+
+| 来源 | 拉取命令 |
+| --- | --- |
+| Docker Hub（公开） | `docker pull wwb051221/bangumi-syncer:0.1.0` |
+| GHCR | `docker pull ghcr.io/wwb051221/bangumi-syncer:0.1.0` |
+| 飞牛加速源 | `docker pull docker.fnnas.com/wwb051221/bangumi-syncer:0.1.0` |
+
+也可以直接用 `latest`。不想本地构建时，把 `docker-compose.yml` 里的 `image:` 改成对应地址，
+并删掉 `build:` 段，然后 `docker compose up -d` 即可。
 
 ## 快速开始（Docker Compose，推荐）
 
