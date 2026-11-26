@@ -32,6 +32,7 @@ JavaScript/CSS（无 npm 依赖、无 CDN 资源）。因此不存在需要逐�
 | [Bangumi 番组计划](https://bgm.tv/) / [api.bgm.tv](https://api.bgm.tv/) | 条目搜索、章节与收藏同步 | 通过公开 API 与 OAuth 访问；本项目与 Bangumi 官方无隶属关系，使用需遵守其服务条款 |
 | 飞牛影视（fnOS `trim.media`） | 只读读取本地媒体库 SQLite | 闭源商业软件；本项目与其无隶属关系，仅以只读方式读取数据库，不修改其文件 |
 | [shields.io](https://shields.io/) | README 徽章图片 | 仅引用在线图片，不随仓库分发 |
+| DeepSeek Harness (DSH) / `deepseek-flash` | AI 辅助开发 | 开发工具，不随项目分发；详见 [AI_ASSISTANCE.md](AI_ASSISTANCE.md) |
 
 ## 文档与素材
 

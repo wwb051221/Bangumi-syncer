@@ -8,6 +8,8 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Image size](https://img.shields.io/badge/image-~120MB-informational.svg)](#docker)
 [![Docker Pulls](https://img.shields.io/docker/pulls/wwb051221/bangumi-syncer.svg)](https://hub.docker.com/r/wwb051221/bangumi-syncer)
+[![AI-assisted](https://img.shields.io/badge/AI--assisted-DeepSeek%20Harness%200.2.2--rc.5-blueviolet)](AI_ASSISTANCE.md)
+
 
 
 **English**: [README.en.md](README.en.md) · **设计文档**: [架构](docs/architecture.md) · [匹配算法](docs/mapping.md) · [飞牛数据库结构](docs/schema.md) · [HTTP API](docs/api.md) · [验证记录](docs/verification.md)
@@ -430,6 +432,22 @@ docs/              架构、匹配算法、飞牛库结构
 - [ ] `--dry-run` 时输出 diff 报告文件
 - [ ] 多 Bangumi 账号同时写同一用户（主备）
 - [ ] AniList / MAL 目标适配器
+
+## 引用与 AI 披露
+
+- 引用信息：[CITATION.cff](CITATION.cff)（GitHub 仓库右侧的 **Cite this repository** 会读取它）
+- AI 辅助开发声明：[AI_ASSISTANCE.md](AI_ASSISTANCE.md)（智能体 DSH **0.2.2-rc.5**，模型 **deepseek-flash**）
+
+```bibtex
+@software{bangumi_syncer_2026,
+  title   = {Bangumi-syncer},
+  author  = {{Bangumi-syncer contributors}},
+  year    = {2026},
+  version = {0.1.0},
+  url     = {https://github.com/wwb051221/Bangumi-syncer},
+  license = {MIT}
+}
+```
 
 ## 第三方与致谢
 

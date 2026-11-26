@@ -222,6 +222,22 @@ ruff check src tests
 Layout and extension points (adding Jellyfin/Emby/Plex sources) are documented in
 [docs/architecture.md](docs/architecture.md).
 
+## Citation and AI disclosure
+
+- Citation metadata: [CITATION.cff](CITATION.cff) (GitHub's **Cite this repository** reads it)
+- AI-assistance statement: [AI_ASSISTANCE.md](AI_ASSISTANCE.md) — agent DSH **0.2.2-rc.5**, model **deepseek-flash**
+
+```bibtex
+@software{bangumi_syncer_2026,
+  title   = {Bangumi-syncer},
+  author  = {{Bangumi-syncer contributors}},
+  year    = {2026},
+  version = {0.1.0},
+  url     = {https://github.com/wwb051221/Bangumi-syncer},
+  license = {MIT}
+}
+```
+
 ## Third-party notices
 
 No source code from other repositories is copied or vendored: the backend uses only the Python

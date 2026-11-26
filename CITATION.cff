@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use Bangumi-syncer in academic work or build on it, please cite this repository."
+title: "Bangumi-syncer"
+abstract: >-
+  A zero-dependency container that reads the fnOS (trim.media) media database
+  read-only and syncs anime episode marks and collection status to Bangumi via
+  OAuth. Supports multiple users, dry-run by default, human-reviewable matching,
+  and a browser-based setup UI.
+type: software
+authors:
+  - name: "Bangumi-syncer contributors"
+repository-code: "https://github.com/wwb051221/Bangumi-syncer"
+url: "https://github.com/wwb051221/Bangumi-syncer"
+license: MIT
+version: 0.1.0
+date-released: 2026-11-24
+keywords:
+  - fnos
+  - trim.media
+  - bangumi
+  - anime
+  - watch-progress
+  - docker
+  - self-hosted
