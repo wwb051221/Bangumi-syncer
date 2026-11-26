@@ -431,6 +431,12 @@ docs/              架构、匹配算法、飞牛库结构
 - [ ] 多 Bangumi 账号同时写同一用户（主备）
 - [ ] AniList / MAL 目标适配器
 
+## 第三方与致谢
+
+本仓库**没有复制或内嵌其他项目的源代码**：后端只用 Python 标准库，前端为手写原生 JS/CSS，
+无 npm、无 CDN 资源。构建与运行使用的基础镜像、pytest/ruff、GitHub Actions、Bangumi API、
+飞牛数据库等外部组件的来源与许可，统一列在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
 ## 许可
 
 [MIT](LICENSE)。与飞牛、Bangumi 均无隶属关系；Bangumi API 请遵守其使用条款，保持默认 1 秒限速。

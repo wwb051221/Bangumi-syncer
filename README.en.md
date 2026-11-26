@@ -222,6 +222,14 @@ ruff check src tests
 Layout and extension points (adding Jellyfin/Emby/Plex sources) are documented in
 [docs/architecture.md](docs/architecture.md).
 
+## Third-party notices
+
+No source code from other repositories is copied or vendored: the backend uses only the Python
+standard library and the frontend is hand-written vanilla JS/CSS (no npm, no CDN). The origin and
+license of external components used to build or run it — base image, pytest/ruff, GitHub Actions,
+the Bangumi API, the fnOS database — are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## License
 
 [MIT](LICENSE). Not affiliated with fnOS or Bangumi; please respect the Bangumi API terms —
